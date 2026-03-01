@@ -1,0 +1,11 @@
+{
+  "name": "posta-skill",
+  "version": "1.0.0",
+  "description": "Social media content generation and scheduling via Posta",
+  "author": {
+    "name": "Posta",
+    "url": "https://getposta.app"
+  },
+  "repository": "https://github.com/getposta/posta-skill",
+  "license": "MIT"
+}
