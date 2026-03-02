@@ -8,7 +8,7 @@
     {
       "name": "posta-skill",
       "description": "Social media content generation, scheduling, and analytics via Posta",
-      "source": "."
+      "source": "./"
     }
   ]
 }
