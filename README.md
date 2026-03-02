@@ -25,7 +25,7 @@ A Claude Code plugin that enables social media content generation, scheduling, a
 ### Option A: Install from GitHub (Recommended)
 
 ```bash
-/plugin install STGime/posta-skill
+/plugin install https://github.com/STGime/posta-skill
 ```
 
 Run this command inside a Claude Code session. The plugin will be downloaded and available across all your projects.
