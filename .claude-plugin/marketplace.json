@@ -1,0 +1,14 @@
+{
+  "name": "posta-plugins",
+  "owner": {
+    "name": "Posta",
+    "url": "https://getposta.app"
+  },
+  "plugins": [
+    {
+      "name": "posta-skill",
+      "description": "Social media content generation, scheduling, and analytics via Posta",
+      "source": "."
+    }
+  ]
+}
