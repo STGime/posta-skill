@@ -1,13 +1,13 @@
 ---
 name: posta
-description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, or manage social accounts through Posta. Also activates for "Stupid Correlations" content generation via statapp.
+description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, or manage social accounts through Posta.
 ---
 
 # Posta — Social Media Content & Scheduling
 
 Posta is a social media management platform that lets you create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky.
 
-This skill enables you to interact with the Posta API to manage social media content end-to-end: authenticate, list accounts, upload media, create/schedule/publish posts, generate AI content, create Stupid Correlations videos, and view analytics.
+This skill enables you to interact with the Posta API to manage social media content end-to-end: authenticate, list accounts, upload media, create/schedule/publish posts, generate AI content, and view analytics.
 
 ## Setup
 
@@ -19,9 +19,6 @@ This skill enables you to interact with the Posta API to manage social media con
 ### Optional Environment Variables
 
 - `POSTA_BASE_URL` — API base URL (default: `https://api.getposta.app/v1`)
-- `STATAPP_URL` — Stupid Correlations API base URL (for correlation content)
-- `STATAPP_EMAIL` — Statapp account email (required for statapp access)
-- `STATAPP_PASSWORD` — Statapp account password (required for statapp access)
 - `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation)
 - `GEMINI_API_KEY` — Google Gemini API key (for caption/text generation)
 - `OPENAI_API_KEY` — OpenAI API key (alternative text generation)
@@ -36,12 +33,10 @@ source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
 
 This provides:
 - **Posta:** `posta_login`, `posta_api`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_accounts`, `posta_create_post`, `posta_schedule_post`, `posta_publish_post`, `posta_get_analytics_overview`, `posta_get_best_times`, `posta_get_plan`
-- **Statapp:** `statapp_login`, `statapp_api`, `statapp_generate_random`, `statapp_animate`, `statapp_animate_status`, `statapp_get_styles`
 
 ### Reference Docs
 
 - [Posta API Reference](references/posta-api-reference.md) — Full REST API documentation
-- [Statapp API Reference](references/statapp-api-reference.md) — Stupid Correlations endpoints
 - [Content Generation Patterns](references/content-generation.md) — Fireworks/Gemini/OpenAI usage
 - [Workflow Examples](examples/workflows.md) — Full example conversations
 
@@ -171,56 +166,7 @@ CAPTION=$(curl -s -X POST \
 
 See [content-generation.md](references/content-generation.md) for full patterns including OpenAI and hashtag generation.
 
-### 6. Generate Stupid Correlations
-
-Generate viral correlation content (chart + AI image + optional video):
-
-**Image only (fast):**
-```bash
-RESULT=$(statapp_generate_random "square" "classic" false)
-
-IMAGE_URL=$(echo "$RESULT" | jq -r '.image.url')
-HEADLINE=$(echo "$RESULT" | jq -r '.caption.headline')
-CAPTION=$(echo "$RESULT" | jq -r '.caption.caption')
-```
-
-**With video (slower but great for TikTok/Reels):**
-```bash
-RESULT=$(statapp_generate_random "portrait" "neon" true)
-
-VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url')
-```
-
-**Async video (for separate video generation):**
-```bash
-# 1. Generate image first
-RESULT=$(statapp_generate_random "portrait" "classic" false)
-
-# 2. Queue video job
-JOB=$(statapp_animate '{
-  "datasetAId": "'"$(echo "$RESULT" | jq -r '.correlation.datasetA.id')"'",
-  "datasetBId": "'"$(echo "$RESULT" | jq -r '.correlation.datasetB.id')"'",
-  "backgroundUrl": "'"$(echo "$RESULT" | jq -r '.background.url')"'",
-  "caption": '"$(echo "$RESULT" | jq '.caption')"',
-  "aspectRatio": "portrait",
-  "chartStyle": "neon"
-}')
-
-JOB_ID=$(echo "$JOB" | jq -r '.jobId')
-
-# 3. Wait for completion (long-poll)
-VIDEO_RESULT=$(statapp_animate_status "$JOB_ID" true)
-
-VIDEO_URL=$(echo "$VIDEO_RESULT" | jq -r '.video.url')
-```
-
-Aspect ratios: `square` (1024x1024, Instagram), `portrait` (768x1344, TikTok/Reels), `landscape` (1344x768, LinkedIn/X).
-
-Chart styles: `classic`, `neon`, `minimal`.
-
-See [statapp-api-reference.md](references/statapp-api-reference.md) for full API docs.
-
-### 7. View Analytics
+### 6. View Analytics
 
 **Overview stats:**
 ```bash

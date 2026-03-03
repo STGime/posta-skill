@@ -7,7 +7,6 @@ A Claude Code plugin that enables social media content generation, scheduling, a
 - **Post Management** — Create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky
 - **Media Upload** — Upload images and videos via signed URL flow
 - **AI Content Generation** — Generate images (Fireworks.ai SDXL), captions, and hashtags (Gemini/OpenAI)
-- **Stupid Correlations** — Generate viral correlation content with charts, images, and animated videos via statapp
 - **Analytics** — View post performance, best posting times, trends, and engagement metrics
 - **Account Management** — List connected social accounts and their status
 
@@ -121,8 +120,7 @@ You can set environment variables in Claude Code's settings files. These are rea
   "env": {
     "POSTA_EMAIL": "your@email.com",
     "POSTA_PASSWORD": "your-posta-password",
-    "STATAPP_URL": "https://your-statapp.com"
-  }
+}
 }
 ```
 
@@ -149,16 +147,6 @@ Without these, the plugin cannot authenticate and no API calls will work.
 
 You only need to set this if you're running a self-hosted Posta instance or connecting to a staging environment.
 
-### Stupid Correlations (statapp)
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `STATAPP_URL` | Base URL of your statapp instance | `https://statapp.example.com` |
-| `STATAPP_EMAIL` | Your statapp account email | `user@example.com` |
-| `STATAPP_PASSWORD` | Your statapp account password | `my-secure-password` |
-
-All three are required if you want to generate "Stupid Correlations" content (viral data correlation images and videos). Without these, correlation-related commands won't work, but all other Posta features function normally.
-
 ### AI Content Generation
 
 These are optional. Each unlocks a different generation capability:
@@ -182,11 +170,6 @@ You don't need all three — each is independent:
 # Required — Posta credentials
 export POSTA_EMAIL="your@email.com"
 export POSTA_PASSWORD="your-posta-password"
-
-# Optional — Stupid Correlations
-export STATAPP_URL="https://statapp.example.com"
-export STATAPP_EMAIL="your@email.com"
-export STATAPP_PASSWORD="your-statapp-password"
 
 # Optional — AI image generation
 export FIREWORKS_API_KEY="fw_1234567890abcdef"
@@ -222,11 +205,7 @@ Once configured, just ask Claude naturally:
 
 > Upload this image and post it to Instagram with the caption "Hello world!"
 
-> Generate a stupid correlation and schedule it for tomorrow at 9am on all accounts
-
 > Show me my best performing posts this month
-
-> Create a portrait video correlation for TikTok and schedule it for Friday at 6pm
 
 > What are the best times to post based on my analytics?
 
@@ -251,8 +230,6 @@ When you ask Claude to perform social media tasks, it:
 | "Login failed — no token in response" | Check your email/password. Try logging in at [getposta.app](https://getposta.app) to verify |
 | API returns 403 | Your Posta plan may have expired. Run: "Check my plan status" |
 | Image generation fails silently | Verify `FIREWORKS_API_KEY` is set correctly. Check your Fireworks billing |
-| Statapp commands do nothing | Set `STATAPP_URL`, `STATAPP_EMAIL`, and `STATAPP_PASSWORD` |
-| "Statapp login failed" | Check your statapp email/password credentials |
 | Changes to env vars not taking effect | Restart Claude Code — environment variables are read at startup |
 | `jq: command not found` | Install jq: `brew install jq` (macOS) or `apt install jq` (Linux) |
 
