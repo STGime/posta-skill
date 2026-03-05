@@ -7,11 +7,136 @@ set -euo pipefail
 POSTA_BASE_URL="${POSTA_BASE_URL:-https://api.getposta.app/v1}"
 POSTA_TOKEN_FILE="/tmp/.posta_token"
 
+STATAPP_BASE_URL="${STATAPP_URL:-}"
+STATAPP_TOKEN_FILE="/tmp/.statapp_token"
+STATAPP_DEVICE_ID="${STATAPP_DEVICE_ID:-claude-plugin-$(whoami)}"
+
+# ─── JSON Parsing Helper ─────────────────────────────────────────────────────
+
+# Resolve script directory (works in both bash and zsh)
+POSTA_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd 2>/dev/null)" || \
+POSTA_SCRIPT_DIR="$(cd "$(dirname "${0}")" && pwd 2>/dev/null)" || \
+POSTA_SCRIPT_DIR="/Users/stefangimeson/.claude/plugins/cache/posta-plugins/posta-skill/1.0.0/skills/posta/scripts"
+
+posta_sanitize_json() {
+  # Sanitize a JSON API response so jq can parse it and it survives echo on macOS.
+  #
+  # Two problems:
+  #   1. API responses have literal control chars (newlines in captions) that jq rejects.
+  #   2. macOS built-in echo interprets \n \t \r etc., so properly escaped JSON
+  #      like {"caption":"line1\nline2"} gets corrupted back to literal newlines.
+  #
+  # Solution: Python parses with strict=False, re-serializes, then double-escapes
+  # all backslashes so that macOS echo reduces \\ to \ and jq gets valid JSON.
+  local tmpfile="/tmp/.posta_sanitize_$$"
+  printf '%s' "$1" > "$tmpfile"
+  python3 "${POSTA_SCRIPT_DIR}/sanitize_json.py" "$tmpfile" 2>/dev/null || cat "$tmpfile"
+  rm -f "$tmpfile"
+}
+
+# ─── Credentials Discovery ───────────────────────────────────────────────────
+
+posta_discover_credentials() {
+  # Skip if already set
+  if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+    return 0
+  fi
+
+  local source_found=""
+
+  # Helper: extract a var value from a file (safe under pipefail)
+  _posta_extract_var() {
+    local varname="$1" file="$2"
+    grep -E "^(export )?${varname}=" "$file" 2>/dev/null | tail -1 | sed "s/^export //" | sed "s/^${varname}=//" | tr -d '"' | tr -d "'" || true
+  }
+
+  # 1. Check shell profiles (~/.zshrc, ~/.bashrc)
+  for profile in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if [[ -f "$profile" ]]; then
+      local val
+      val=$(_posta_extract_var POSTA_EMAIL "$profile")
+      if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
+        export POSTA_EMAIL="$val"
+      fi
+      val=$(_posta_extract_var POSTA_PASSWORD "$profile")
+      if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
+        export POSTA_PASSWORD="$val"
+      fi
+      if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+        source_found="$profile"
+        break
+      fi
+    fi
+  done
+
+  # 2. Check .env files in CWD
+  if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
+    for envfile in .env .env.local .env.production; do
+      if [[ -f "$envfile" ]]; then
+        local val
+        val=$(_posta_extract_var POSTA_EMAIL "$envfile")
+        if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
+          export POSTA_EMAIL="$val"
+        fi
+        val=$(_posta_extract_var POSTA_PASSWORD "$envfile")
+        if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
+          export POSTA_PASSWORD="$val"
+        fi
+        if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+          source_found="$envfile"
+          break
+        fi
+      fi
+    done
+  fi
+
+  # 3. Check dedicated credentials file
+  if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
+    local creds_file="$HOME/.posta/credentials"
+    if [[ -f "$creds_file" ]]; then
+      local val
+      val=$(_posta_extract_var POSTA_EMAIL "$creds_file")
+      if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
+        export POSTA_EMAIL="$val"
+      fi
+      val=$(_posta_extract_var POSTA_PASSWORD "$creds_file")
+      if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
+        export POSTA_PASSWORD="$val"
+      fi
+      if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+        source_found="$creds_file"
+      fi
+    fi
+  fi
+
+  # Also discover FIREWORKS_API_KEY if missing
+  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
+    for src in "$HOME/.zshrc" "$HOME/.bashrc" .env .env.local .env.development .env.production "$HOME/.posta/credentials"; do
+      if [[ -f "$src" ]]; then
+        local val
+        val=$(_posta_extract_var FIREWORKS_API_KEY "$src")
+        if [[ -n "$val" ]]; then
+          export FIREWORKS_API_KEY="$val"
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [[ -n "$source_found" ]]; then
+    echo "INFO: Posta credentials loaded from ${source_found}" >&2
+  fi
+}
+
 # ─── Authentication ───────────────────────────────────────────────────────────
 
 posta_login() {
+  # Discover credentials from common locations if not set
+  posta_discover_credentials
+
   if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
     echo "ERROR: POSTA_EMAIL and POSTA_PASSWORD must be set" >&2
+    echo "Searched: env vars, ~/.zshrc, ~/.bashrc, .env files, ~/.posta/credentials" >&2
     return 1
   fi
 
@@ -91,7 +216,8 @@ posta_api() {
     return 1
   fi
 
-  echo "$response"
+  # Sanitize control characters that break jq
+  posta_sanitize_json "$response"
 }
 
 # ─── Media Upload (3-step signed URL flow) ────────────────────────────────────
@@ -177,13 +303,15 @@ posta_upload_from_url() {
 # ─── Convenience wrappers ─────────────────────────────────────────────────────
 
 posta_list_accounts() {
-  posta_api GET "/social-accounts"
+  # API wraps accounts in { accounts: [...] } — unwrap to plain array
+  posta_api GET "/social-accounts" | jq '.accounts // .'
 }
 
 posta_list_posts() {
   local limit="${1:-20}"
   local offset="${2:-0}"
-  posta_api GET "/posts?limit=${limit}&offset=${offset}"
+  # API wraps posts in { items: [...] } — unwrap to plain array
+  posta_api GET "/posts?limit=${limit}&offset=${offset}" | jq '.items // .posts // .'
 }
 
 posta_create_post() {
@@ -215,3 +343,192 @@ posta_get_plan() {
   posta_api GET "/users/plan"
 }
 
+posta_get_post() {
+  local post_id="$1"
+  posta_api GET "/posts/${post_id}"
+}
+
+posta_update_post() {
+  local post_id="$1"
+  local body="$2"
+  posta_api PATCH "/posts/${post_id}" "$body"
+}
+
+posta_delete_post() {
+  local post_id="$1"
+  posta_api DELETE "/posts/${post_id}"
+}
+
+posta_cancel_post() {
+  local post_id="$1"
+  posta_api POST "/posts/${post_id}/cancel"
+}
+
+posta_get_media() {
+  local media_id="$1"
+  posta_api GET "/media/${media_id}"
+}
+
+# ─── Multiline Caption Helper ────────────────────────────────────────────────
+
+posta_create_post_from_file() {
+  # Creates a post using a caption from a file — handles multiline text safely
+  local caption_file="$1"
+  local media_ids_json="${2:-[]}"
+  local account_ids_json="$3"
+  local is_draft="${4:-true}"
+
+  local payload
+  payload=$(jq -n \
+    --arg caption "$(cat "$caption_file")" \
+    --argjson mediaIds "$media_ids_json" \
+    --argjson accountIds "$account_ids_json" \
+    --argjson isDraft "$is_draft" \
+    '{caption: $caption, mediaIds: $mediaIds, socialAccountIds: $accountIds, isDraft: $isDraft, hashtags: []}')
+
+  posta_api POST "/posts" "$payload"
+}
+
+# ─── Fireworks API Key Validation ────────────────────────────────────────────
+
+fireworks_validate_key() {
+  # Discover key if not set
+  posta_discover_credentials
+
+  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
+    echo "ERROR: FIREWORKS_API_KEY is not set." >&2
+    echo "Set it as an env var, in .env.development, ~/.zshrc, or ~/.posta/credentials" >&2
+    return 1
+  fi
+
+  # Lightweight test: list models (small request)
+  local http_code
+  http_code=$(curl -sf -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
+    "https://api.fireworks.ai/inference/v1/models" 2>/dev/null)
+
+  if [[ "$http_code" -ge 400 ]]; then
+    echo "ERROR: Fireworks API key is invalid (HTTP ${http_code}). Keys start with 'fw_'." >&2
+    echo "Get a key at https://fireworks.ai/account/api-keys" >&2
+    return 1
+  fi
+
+  echo "OK: Fireworks API key is valid" >&2
+  return 0
+}
+
+# ─── Statapp (Stupid Correlations) ────────────────────────────────────────────
+
+statapp_login() {
+  if [[ -z "${STATAPP_BASE_URL:-}" ]]; then
+    echo "ERROR: STATAPP_URL must be set" >&2
+    return 1
+  fi
+  if [[ -z "${STATAPP_EMAIL:-}" || -z "${STATAPP_PASSWORD:-}" ]]; then
+    echo "ERROR: STATAPP_EMAIL and STATAPP_PASSWORD must be set" >&2
+    return 1
+  fi
+
+  local response
+  response=$(curl -sf -X POST "${STATAPP_BASE_URL}/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\": \"${STATAPP_EMAIL}\", \"password\": \"${STATAPP_PASSWORD}\"}")
+
+  local token
+  token=$(echo "$response" | jq -r '.token // .access_token // .idToken // empty')
+
+  if [[ -z "$token" ]]; then
+    echo "ERROR: Statapp login failed — no token in response" >&2
+    echo "$response" >&2
+    return 1
+  fi
+
+  echo "$token" > "$STATAPP_TOKEN_FILE"
+  echo "$token"
+}
+
+statapp_get_token() {
+  if [[ -f "$STATAPP_TOKEN_FILE" ]]; then
+    local token
+    token=$(cat "$STATAPP_TOKEN_FILE")
+    if [[ -n "$token" ]]; then
+      echo "$token"
+      return 0
+    fi
+  fi
+
+  statapp_login
+}
+
+statapp_api() {
+  local method="$1"
+  local endpoint="$2"
+  local body="${3:-}"
+
+  if [[ -z "${STATAPP_BASE_URL:-}" ]]; then
+    echo "ERROR: STATAPP_URL must be set" >&2
+    return 1
+  fi
+
+  local token
+  token=$(statapp_get_token)
+
+  local args=(
+    -sf
+    -X "$method"
+    -H "Authorization: Bearer ${token}"
+    -H "X-Device-Id: ${STATAPP_DEVICE_ID}"
+    -H "Content-Type: application/json"
+  )
+
+  if [[ -n "$body" ]]; then
+    args+=(-d "$body")
+  fi
+
+  local response http_code
+  response=$(curl -w "\n%{http_code}" "${args[@]}" "${STATAPP_BASE_URL}${endpoint}")
+  http_code=$(echo "$response" | tail -1)
+  response=$(echo "$response" | sed '$d')
+
+  # If 401, re-login and retry once
+  if [[ "$http_code" == "401" ]]; then
+    rm -f "$STATAPP_TOKEN_FILE"
+    token=$(statapp_login)
+    args[4]="Authorization: Bearer ${token}"
+
+    response=$(curl -w "\n%{http_code}" "${args[@]}" "${STATAPP_BASE_URL}${endpoint}")
+    http_code=$(echo "$response" | tail -1)
+    response=$(echo "$response" | sed '$d')
+  fi
+
+  if [[ "$http_code" -ge 400 ]]; then
+    echo "ERROR: Statapp API returned HTTP ${http_code}" >&2
+    echo "$response" >&2
+    return 1
+  fi
+
+  echo "$response"
+}
+
+statapp_generate_random() {
+  local aspect_ratio="${1:-square}"
+  local chart_style="${2:-classic}"
+  local include_video="${3:-false}"
+  statapp_api POST "/api/generate/random" \
+    "{\"aspectRatio\": \"${aspect_ratio}\", \"chartStyle\": \"${chart_style}\", \"includeVideo\": ${include_video}}"
+}
+
+statapp_animate() {
+  local body="$1"
+  statapp_api POST "/api/generate/animate" "$body"
+}
+
+statapp_animate_status() {
+  local job_id="$1"
+  local wait="${2:-true}"
+  statapp_api GET "/api/generate/animate/status/${job_id}?wait=${wait}"
+}
+
+statapp_get_styles() {
+  statapp_api GET "/api/generate/styles"
+}

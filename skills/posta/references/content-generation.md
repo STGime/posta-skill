@@ -8,6 +8,17 @@ Generate images using Stable Diffusion XL via Fireworks.ai.
 
 **Required:** `FIREWORKS_API_KEY` environment variable.
 
+- **Get a key:** Sign up at https://fireworks.ai and create an API key at https://fireworks.ai/account/api-keys
+- **Key format:** Keys start with `fw_` (e.g. `fw_abc123...`)
+- **Auto-discovery:** The skill searches env vars, `.env.development`, `~/.zshrc`, `~/.bashrc`, and `~/.posta/credentials`
+- **Validation:** Run `fireworks_validate_key` to test your key before generating images
+
+**Error handling:**
+```bash
+# Validate before spending credits
+fireworks_validate_key || { echo "Fix your Fireworks key first"; exit 1; }
+```
+
 ### Request
 
 ```bash

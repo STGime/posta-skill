@@ -1,13 +1,13 @@
 ---
 name: posta
-description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, or manage social accounts through Posta.
+description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, or manage social accounts through Posta. Also activates for "Stupid Correlations" content generation via statapp.
 ---
 
 # Posta — Social Media Content & Scheduling
 
 Posta is a social media management platform that lets you create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky.
 
-This skill enables you to interact with the Posta API to manage social media content end-to-end: authenticate, list accounts, upload media, create/schedule/publish posts, generate AI content, and view analytics.
+This skill enables you to interact with the Posta API to manage social media content end-to-end: authenticate, list accounts, upload media, create/schedule/publish posts, generate AI content, create Stupid Correlations videos, and view analytics.
 
 ## Setup
 
@@ -19,9 +19,20 @@ This skill enables you to interact with the Posta API to manage social media con
 ### Optional Environment Variables
 
 - `POSTA_BASE_URL` — API base URL (default: `https://api.getposta.app/v1`)
-- `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation)
+- `STATAPP_URL` — Stupid Correlations API base URL (for correlation content)
+- `STATAPP_EMAIL` — Statapp account email (required for statapp access)
+- `STATAPP_PASSWORD` — Statapp account password (required for statapp access)
+- `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation). Keys start with `fw_`. Get one at https://fireworks.ai/account/api-keys. The skill auto-discovers this from env vars, `.env.development`, `~/.zshrc`, `~/.bashrc`, or `~/.posta/credentials`.
 - `GEMINI_API_KEY` — Google Gemini API key (for caption/text generation)
 - `OPENAI_API_KEY` — OpenAI API key (alternative text generation)
+
+### Credentials Auto-Discovery
+
+The skill automatically discovers credentials from multiple locations (in order):
+1. Already-set environment variables
+2. `~/.zshrc` and `~/.bashrc` (grep for exports)
+3. `.env`, `.env.local`, `.env.production` in the current working directory
+4. `~/.posta/credentials` (dedicated config file)
 
 ### Helper Script
 
@@ -32,11 +43,13 @@ source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
 ```
 
 This provides:
-- **Posta:** `posta_login`, `posta_api`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_accounts`, `posta_create_post`, `posta_schedule_post`, `posta_publish_post`, `posta_get_analytics_overview`, `posta_get_best_times`, `posta_get_plan`
+- **Posta:** `posta_login`, `posta_api`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_accounts`, `posta_list_posts`, `posta_create_post`, `posta_create_post_from_file`, `posta_get_post`, `posta_update_post`, `posta_delete_post`, `posta_cancel_post`, `posta_schedule_post`, `posta_publish_post`, `posta_get_media`, `posta_get_analytics_overview`, `posta_get_best_times`, `posta_get_plan`, `posta_discover_credentials`, `fireworks_validate_key`
+- **Statapp:** `statapp_login`, `statapp_api`, `statapp_generate_random`, `statapp_animate`, `statapp_animate_status`, `statapp_get_styles`
 
 ### Reference Docs
 
 - [Posta API Reference](references/posta-api-reference.md) — Full REST API documentation
+- [Statapp API Reference](references/statapp-api-reference.md) — Stupid Correlations endpoints
 - [Content Generation Patterns](references/content-generation.md) — Fireworks/Gemini/OpenAI usage
 - [Workflow Examples](examples/workflows.md) — Full example conversations
 
@@ -62,10 +75,13 @@ posta_api GET "/auth/me"
 
 ```bash
 ACCOUNTS=$(posta_list_accounts)
+# Returns a plain array (wrapper is auto-unwrapped)
 echo "$ACCOUNTS" | jq -r '.[] | "\(.platform)\t\(.username)\t\(.isActive)"'
 ```
 
 Display as a table showing: Platform, Username, Active status, Last used.
+
+> **Note:** Account IDs from `posta_list_accounts` are integers (e.g. `35`). Wrap them in quotes when passing to `socialAccountIds`: `"socialAccountIds": ["35"]`
 
 ### 3. Upload Media
 
@@ -98,9 +114,22 @@ POST=$(posta_create_post '{
   "caption": "Your caption here",
   "hashtags": ["tag1", "tag2"],
   "mediaIds": ["media-uuid"],
-  "socialAccountIds": ["account-id-1", "account-id-2"],
+  "socialAccountIds": ["35", "42"],
   "isDraft": true
 }')
+POST_ID=$(echo "$POST" | jq -r '.id')
+```
+
+**Create a post with multiline caption (from file):**
+```bash
+cat > /tmp/caption.txt << 'EOF'
+Line one of the caption.
+
+Line two with details.
+
+Call to action here.
+EOF
+POST=$(posta_create_post_from_file /tmp/caption.txt '["media-uuid"]' '["35", "42"]' true)
 POST_ID=$(echo "$POST" | jq -r '.id')
 ```
 
@@ -166,7 +195,56 @@ CAPTION=$(curl -s -X POST \
 
 See [content-generation.md](references/content-generation.md) for full patterns including OpenAI and hashtag generation.
 
-### 6. View Analytics
+### 6. Generate Stupid Correlations
+
+Generate viral correlation content (chart + AI image + optional video):
+
+**Image only (fast):**
+```bash
+RESULT=$(statapp_generate_random "square" "classic" false)
+
+IMAGE_URL=$(echo "$RESULT" | jq -r '.image.url')
+HEADLINE=$(echo "$RESULT" | jq -r '.caption.headline')
+CAPTION=$(echo "$RESULT" | jq -r '.caption.caption')
+```
+
+**With video (slower but great for TikTok/Reels):**
+```bash
+RESULT=$(statapp_generate_random "portrait" "neon" true)
+
+VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url')
+```
+
+**Async video (for separate video generation):**
+```bash
+# 1. Generate image first
+RESULT=$(statapp_generate_random "portrait" "classic" false)
+
+# 2. Queue video job
+JOB=$(statapp_animate '{
+  "datasetAId": "'"$(echo "$RESULT" | jq -r '.correlation.datasetA.id')"'",
+  "datasetBId": "'"$(echo "$RESULT" | jq -r '.correlation.datasetB.id')"'",
+  "backgroundUrl": "'"$(echo "$RESULT" | jq -r '.background.url')"'",
+  "caption": '"$(echo "$RESULT" | jq '.caption')"',
+  "aspectRatio": "portrait",
+  "chartStyle": "neon"
+}')
+
+JOB_ID=$(echo "$JOB" | jq -r '.jobId')
+
+# 3. Wait for completion (long-poll)
+VIDEO_RESULT=$(statapp_animate_status "$JOB_ID" true)
+
+VIDEO_URL=$(echo "$VIDEO_RESULT" | jq -r '.video.url')
+```
+
+Aspect ratios: `square` (1024x1024, Instagram), `portrait` (768x1344, TikTok/Reels), `landscape` (1344x768, LinkedIn/X).
+
+Chart styles: `classic`, `neon`, `minimal`.
+
+See [statapp-api-reference.md](references/statapp-api-reference.md) for full API docs.
+
+### 7. View Analytics
 
 **Overview stats:**
 ```bash
@@ -214,3 +292,7 @@ echo "$PLAN" | jq '{plan, usage, limits}'
 7. **Create posts as drafts first.** Always set `isDraft: true` when creating posts, then schedule or publish after user confirmation.
 
 8. **Combine media types strategically.** For maximum reach, generate both an image (for Instagram/LinkedIn) and a video (for TikTok/Reels) from the same content.
+
+9. **Preview generated images before uploading.** After generating an image with Fireworks, use the Read tool to preview it visually before uploading to Posta. This prevents wasted uploads and media quota.
+
+10. **Use `posta_create_post_from_file` for multiline captions.** Write the caption to a temp file and use the file-based helper instead of trying to embed multiline text in JSON strings. This avoids escaping issues.
