@@ -179,6 +179,9 @@ posta_login() {
 }
 
 posta_get_token() {
+  # Discover credentials (including API token) from config files if not in env
+  posta_discover_credentials
+
   # If POSTA_API_TOKEN is set, use it directly (no login needed)
   if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
     echo "$POSTA_API_TOKEN"
