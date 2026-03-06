@@ -14,9 +14,6 @@ with open(infile, "rb") as f:
 try:
     obj = json.loads(raw, strict=False)
     clean = json.dumps(obj, ensure_ascii=False)
-    # macOS echo interprets: \n \t \r \a \b \c \f \v \\ \0NNN
-    # Double-escape so echo("\\n") -> "\n" which jq accepts.
-    clean = clean.replace("\\", "\\\\")
     sys.stdout.write(clean)
 except Exception:
     sys.stdout.write(raw)

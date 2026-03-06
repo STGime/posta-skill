@@ -19,24 +19,23 @@ POSTA_SCRIPT_DIR="$(cd "$(dirname "${0}")" && pwd 2>/dev/null)" || \
 POSTA_SCRIPT_DIR="/Users/stefangimeson/.claude/plugins/cache/posta-plugins/posta-skill/1.0.0/skills/posta/scripts"
 
 posta_sanitize_json() {
-  # Sanitize a JSON API response so jq can parse it and it survives echo on macOS.
-  #
-  # Two problems:
-  #   1. API responses have literal control chars (newlines in captions) that jq rejects.
-  #   2. macOS built-in echo interprets \n \t \r etc., so properly escaped JSON
-  #      like {"caption":"line1\nline2"} gets corrupted back to literal newlines.
-  #
-  # Solution: Python parses with strict=False, re-serializes, then double-escapes
-  # all backslashes so that macOS echo reduces \\ to \ and jq gets valid JSON.
-  local tmpfile="/tmp/.posta_sanitize_$$"
-  printf '%s' "$1" > "$tmpfile"
+  # Sanitize a JSON API response so jq can parse it.
+  # Reads from a file path (arg 1) to avoid bash argument length limits on large responses.
+  # Python parses with strict=False to handle literal control chars in captions,
+  # then re-serializes as clean JSON.
+  local tmpfile="$1"
   python3 "${POSTA_SCRIPT_DIR}/sanitize_json.py" "$tmpfile" 2>/dev/null || cat "$tmpfile"
-  rm -f "$tmpfile"
 }
 
 # ─── Credentials Discovery ───────────────────────────────────────────────────
 
 posta_discover_credentials() {
+  # Only run discovery once per session
+  if [[ "${_POSTA_CREDS_DISCOVERED:-}" == "1" ]]; then
+    return 0
+  fi
+  export _POSTA_CREDS_DISCOVERED=1
+
   # If API token already set, skip password discovery
   if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
     return 0
@@ -151,9 +150,6 @@ posta_discover_credentials() {
 # ─── Authentication ───────────────────────────────────────────────────────────
 
 posta_login() {
-  # Discover credentials from common locations if not set
-  posta_discover_credentials
-
   if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
     echo "ERROR: POSTA_EMAIL and POSTA_PASSWORD must be set" >&2
     echo "Searched: env vars, ~/.zshrc, ~/.bashrc, .env files, ~/.posta/credentials" >&2
@@ -179,12 +175,9 @@ posta_login() {
 }
 
 posta_get_token() {
-  # Discover credentials (including API token) from config files if not in env
-  posta_discover_credentials
-
   # If POSTA_API_TOKEN is set, use it directly (no login needed)
   if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
-    echo "$POSTA_API_TOKEN"
+    printf '%s' "$POSTA_API_TOKEN"
     return 0
   fi
 
@@ -193,7 +186,7 @@ posta_get_token() {
     local token
     token=$(cat "$POSTA_TOKEN_FILE")
     if [[ -n "$token" ]]; then
-      echo "$token"
+      printf '%s' "$token"
       return 0
     fi
   fi
@@ -209,49 +202,51 @@ posta_api() {
   local endpoint="$2"
   local body="${3:-}"
   local token
+  local tmpfile="/tmp/.posta_response_$$"
 
   token=$(posta_get_token)
 
   local args=(
-    -sf
+    -s
     -X "$method"
     -H "Authorization: Bearer ${token}"
     -H "Content-Type: application/json"
+    -o "$tmpfile"
+    -w "%{http_code}"
   )
 
   if [[ -n "$body" ]]; then
     args+=(-d "$body")
   fi
 
-  local response http_code
-  response=$(curl -w "\n%{http_code}" "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
-  http_code=$(echo "$response" | tail -1)
-  response=$(echo "$response" | sed '$d')
+  local http_code
+  http_code=$(curl "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
 
   # If 401, handle based on token type
   if [[ "$http_code" == "401" ]]; then
     if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
       echo "ERROR: API token is invalid or revoked. Generate a new one at your Posta dashboard." >&2
+      rm -f "$tmpfile"
       return 1
     fi
     # JWT flow: re-login and retry once
     rm -f "$POSTA_TOKEN_FILE"
     token=$(posta_login)
-    args[4]="Authorization: Bearer ${token}"
+    args[6]="Authorization: Bearer ${token}"
 
-    response=$(curl -w "\n%{http_code}" "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
-    http_code=$(echo "$response" | tail -1)
-    response=$(echo "$response" | sed '$d')
+    http_code=$(curl "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
   fi
 
   if [[ "$http_code" -ge 400 ]]; then
     echo "ERROR: API returned HTTP ${http_code}" >&2
-    echo "$response" >&2
+    cat "$tmpfile" >&2
+    rm -f "$tmpfile"
     return 1
   fi
 
-  # Sanitize control characters that break jq
-  posta_sanitize_json "$response"
+  # Sanitize control characters that break jq, output to stdout
+  posta_sanitize_json "$tmpfile"
+  rm -f "$tmpfile"
 }
 
 # ─── Media Upload (3-step signed URL flow) ────────────────────────────────────
@@ -342,10 +337,16 @@ posta_list_accounts() {
 }
 
 posta_list_posts() {
-  local limit="${1:-20}"
-  local offset="${2:-0}"
-  # API wraps posts in { items: [...] } — unwrap to plain array
-  posta_api GET "/posts?limit=${limit}&offset=${offset}" | jq '.items // .posts // .'
+  # Usage: posta_list_posts [post_status] [limit] [offset]
+  # post_status: scheduled, posted, draft, failed, cancelled (optional — omit or pass "" for all)
+  local post_status="${1:-}"
+  local limit="${2:-20}"
+  local offset="${3:-0}"
+  local query="limit=${limit}&offset=${offset}"
+  if [[ -n "$post_status" ]]; then
+    query="${query}&status=${post_status}"
+  fi
+  posta_api GET "/posts?${query}"
 }
 
 posta_create_post() {
@@ -566,3 +567,6 @@ statapp_animate_status() {
 statapp_get_styles() {
   statapp_api GET "/api/generate/styles"
 }
+
+# ─── Auto-discover credentials on source ────────────────────────────────────
+posta_discover_credentials
