@@ -11,10 +11,12 @@ This skill enables you to interact with the Posta API to manage social media con
 
 ## Setup
 
-### Required Environment Variables
+### Authentication (one of the following)
 
-- `POSTA_EMAIL` — Your Posta account email
-- `POSTA_PASSWORD` — Your Posta account password
+- `POSTA_API_TOKEN` — **Recommended.** Personal API token (starts with `posta_`). Long-lived, revocable, no password exposure.
+- `POSTA_EMAIL` + `POSTA_PASSWORD` — Legacy login. The skill logs in and caches a JWT automatically.
+
+If `POSTA_API_TOKEN` is set, email/password are not needed and the login flow is skipped entirely.
 
 ### Optional Environment Variables
 
@@ -30,9 +32,11 @@ This skill enables you to interact with the Posta API to manage social media con
 
 The skill automatically discovers credentials from multiple locations (in order):
 1. Already-set environment variables
-2. `~/.zshrc` and `~/.bashrc` (grep for exports)
-3. `.env`, `.env.local`, `.env.production` in the current working directory
-4. `~/.posta/credentials` (dedicated config file)
+2. `~/.posta/credentials` (dedicated config file — checked first for `POSTA_API_TOKEN`)
+3. `~/.zshrc` and `~/.bashrc` (grep for exports)
+4. `.env`, `.env.local`, `.env.production` in the current working directory
+
+If a `POSTA_API_TOKEN` is found during discovery, the skill uses it immediately and skips email/password lookup.
 
 ### Helper Script
 
@@ -59,7 +63,9 @@ This provides:
 
 ### 1. Authenticate
 
-Authentication is automatic — the helper handles login and token caching. If a request returns 401, it re-authenticates and retries.
+Authentication is automatic. If `POSTA_API_TOKEN` is set, the skill uses it directly — no login step needed. Otherwise it falls back to email/password login with JWT caching. If a request returns 401:
+- **API token**: reports the token is invalid/revoked (no retry)
+- **JWT**: re-authenticates and retries once
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"

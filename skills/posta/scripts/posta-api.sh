@@ -37,6 +37,11 @@ posta_sanitize_json() {
 # ─── Credentials Discovery ───────────────────────────────────────────────────
 
 posta_discover_credentials() {
+  # If API token already set, skip password discovery
+  if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
+    return 0
+  fi
+
   # Skip if already set
   if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
     return 0
@@ -49,6 +54,21 @@ posta_discover_credentials() {
     local varname="$1" file="$2"
     grep -E "^(export )?${varname}=" "$file" 2>/dev/null | tail -1 | sed "s/^export //" | sed "s/^${varname}=//" | tr -d '"' | tr -d "'" || true
   }
+
+  # Discover POSTA_API_TOKEN from common locations (check before email/password)
+  if [[ -z "${POSTA_API_TOKEN:-}" ]]; then
+    for src in "$HOME/.posta/credentials" "$HOME/.zshrc" "$HOME/.bashrc" .env .env.local .env.production; do
+      if [[ -f "$src" ]]; then
+        local val
+        val=$(_posta_extract_var POSTA_API_TOKEN "$src")
+        if [[ -n "$val" ]]; then
+          export POSTA_API_TOKEN="$val"
+          echo "INFO: Posta API token loaded from ${src}" >&2
+          return 0
+        fi
+      fi
+    done
+  fi
 
   # 1. Check shell profiles (~/.zshrc, ~/.bashrc)
   for profile in "$HOME/.zshrc" "$HOME/.bashrc"; do
@@ -159,6 +179,12 @@ posta_login() {
 }
 
 posta_get_token() {
+  # If POSTA_API_TOKEN is set, use it directly (no login needed)
+  if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
+    echo "$POSTA_API_TOKEN"
+    return 0
+  fi
+
   # Return cached token if it exists and is non-empty
   if [[ -f "$POSTA_TOKEN_FILE" ]]; then
     local token
@@ -199,8 +225,13 @@ posta_api() {
   http_code=$(echo "$response" | tail -1)
   response=$(echo "$response" | sed '$d')
 
-  # If 401, re-login and retry once
+  # If 401, handle based on token type
   if [[ "$http_code" == "401" ]]; then
+    if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
+      echo "ERROR: API token is invalid or revoked. Generate a new one at your Posta dashboard." >&2
+      return 1
+    fi
+    # JWT flow: re-login and retry once
     rm -f "$POSTA_TOKEN_FILE"
     token=$(posta_login)
     args[4]="Authorization: Bearer ${token}"

@@ -73,38 +73,59 @@ If the skill activates and attempts to authenticate, the installation is working
 
 ## Configuration
 
-The plugin needs credentials to connect to Posta and (optionally) to AI generation services. There are two ways to configure them.
+The plugin needs credentials to connect to Posta and (optionally) to AI generation services.
 
-### Option 1: Shell profile (recommended — persistent across all sessions)
+### Option 1: API Token (recommended)
 
-Add the variables to your shell profile so they're always available:
+API tokens are the simplest and most secure way to authenticate. Generate one from your Posta dashboard or via the API, then set a single environment variable:
 
-**For zsh (macOS default):**
+**Shell profile (persistent across all sessions):**
 ```bash
-# Open your profile
-nano ~/.zshrc
+# ~/.zshrc or ~/.bash_profile
+export POSTA_API_TOKEN="posta_your_token_here"
+```
 
-# Add these lines at the bottom:
+**Claude Code settings** — `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "POSTA_API_TOKEN": "posta_your_token_here"
+  }
+}
+```
+
+**Dedicated credentials file** — `~/.posta/credentials`:
+```bash
+POSTA_API_TOKEN="posta_your_token_here"
+```
+
+To generate a token via the API (requires a one-time login):
+```bash
+# Get a JWT first
+TOKEN=$(curl -sf -X POST https://api.getposta.app/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"your@email.com","password":"your-password"}' | jq -r '.access_token')
+
+# Create an API token
+curl -sf -X POST https://api.getposta.app/v1/auth/tokens \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Claude Code CLI"}' | jq '.token'
+```
+
+Save the returned `posta_...` token — it is shown only once.
+
+### Option 2: Email & Password (legacy)
+
+You can still use email/password. The plugin will log in and cache a JWT automatically.
+
+**Shell profile:**
+```bash
 export POSTA_EMAIL="your@email.com"
 export POSTA_PASSWORD="your-posta-password"
-
-# Save and reload
-source ~/.zshrc
 ```
 
-**For bash:**
-```bash
-nano ~/.bash_profile
-
-# Add the same export lines, then:
-source ~/.bash_profile
-```
-
-### Option 2: Claude Code settings file (project-specific or global)
-
-You can set environment variables in Claude Code's settings files. These are read at startup.
-
-**Global** (all projects) — `~/.claude/settings.json`:
+**Claude Code settings** — `~/.claude/settings.json`:
 ```json
 {
   "env": {
@@ -114,30 +135,21 @@ You can set environment variables in Claude Code's settings files. These are rea
 }
 ```
 
-**Project-specific** (not committed to git) — `.claude/settings.local.json`:
-```json
-{
-  "env": {
-    "POSTA_EMAIL": "your@email.com",
-    "POSTA_PASSWORD": "your-posta-password",
-}
-}
-```
-
-> **Note:** Shell environment variables take precedence over settings.json. Changes to either require restarting Claude Code.
+> **Note:** Shell environment variables take precedence over settings files. Changes require restarting Claude Code.
 
 ---
 
 ## Environment Variables Reference
 
-### Required
+### Authentication (one of the following)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `POSTA_EMAIL` | Your Posta account email | `user@example.com` |
-| `POSTA_PASSWORD` | Your Posta account password | `my-secure-password` |
+| `POSTA_API_TOKEN` | **Recommended.** Personal API token (starts with `posta_`) | `posta_a1b2c3d4...` |
+| `POSTA_EMAIL` | Your Posta account email (legacy) | `user@example.com` |
+| `POSTA_PASSWORD` | Your Posta account password (legacy) | `my-secure-password` |
 
-Without these, the plugin cannot authenticate and no API calls will work.
+Set `POSTA_API_TOKEN` for the simplest setup. If set, email/password are not needed.
 
 ### Posta API
 
@@ -167,9 +179,8 @@ You don't need all three — each is independent:
 ```bash
 # ~/.zshrc
 
-# Required — Posta credentials
-export POSTA_EMAIL="your@email.com"
-export POSTA_PASSWORD="your-posta-password"
+# Posta auth (recommended: API token)
+export POSTA_API_TOKEN="posta_a1b2c3d4e5f6..."
 
 # Optional — AI image generation
 export FIREWORKS_API_KEY="fw_1234567890abcdef"
@@ -190,9 +201,11 @@ source ~/.zshrc
 ## Security Notes
 
 - **Never commit credentials to git.** Use `.claude/settings.local.json` (gitignored by default) or shell profile for secrets.
-- The plugin caches your Posta JWT token at `/tmp/.posta_token`. This is a temporary file that expires with the token and is cleared on reboot.
+- **API tokens are the recommended auth method.** They don't expose your account password, are long-lived, and can be revoked individually without changing your password.
+- The plugin caches your Posta JWT token at `/tmp/.posta_token`. This is a temporary file that expires with the token and is cleared on reboot. API tokens skip this cache entirely.
 - API keys for Fireworks, Gemini, and OpenAI are sent only to their respective services — never to Posta.
 - The plugin always creates posts as **drafts first** and asks for your confirmation before publishing or scheduling.
+- To revoke an API token, use `DELETE /v1/auth/tokens/:id` or manage tokens in your Posta dashboard.
 
 ---
 
@@ -216,7 +229,7 @@ Once configured, just ask Claude naturally:
 
 When you ask Claude to perform social media tasks, it:
 
-1. **Authenticates** with your Posta account using `POSTA_EMAIL` / `POSTA_PASSWORD`
+1. **Authenticates** with your Posta account using `POSTA_API_TOKEN` (or `POSTA_EMAIL` / `POSTA_PASSWORD`)
 2. **Calls the Posta API** via the included bash helper script (handles token caching, retries, media upload)
 3. **Shows you a preview** before publishing — caption, platforms, media, and scheduled time
 4. **Suggests optimal posting times** from your analytics data when scheduling
@@ -226,7 +239,8 @@ When you ask Claude to perform social media tasks, it:
 
 | Problem | Solution |
 |---------|----------|
-| "POSTA_EMAIL and POSTA_PASSWORD must be set" | Set the required environment variables and restart Claude Code |
+| "POSTA_EMAIL and POSTA_PASSWORD must be set" | Set `POSTA_API_TOKEN` (recommended) or both `POSTA_EMAIL` and `POSTA_PASSWORD`, then restart Claude Code |
+| "API token is invalid or revoked" | Generate a new API token — the current one was revoked or is malformed |
 | "Login failed — no token in response" | Check your email/password. Try logging in at [getposta.app](https://getposta.app) to verify |
 | API returns 403 | Your Posta plan may have expired. Run: "Check my plan status" |
 | Image generation fails silently | Verify `FIREWORKS_API_KEY` is set correctly. Check your Fireworks billing |
