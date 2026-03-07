@@ -144,6 +144,13 @@ POST_ID=$(echo "$POST" | jq -r '.id')
 posta_schedule_post "$POST_ID" "2026-03-15T09:00:00Z"
 ```
 
+**Reschedule an already-scheduled post:**
+The API only allows scheduling posts in draft status. To reschedule, cancel first, then schedule again:
+```bash
+posta_cancel_post "$POST_ID"
+posta_schedule_post "$POST_ID" "2026-03-16T09:00:00Z"
+```
+
 **Publish immediately:**
 ```bash
 posta_publish_post "$POST_ID"
