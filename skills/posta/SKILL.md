@@ -302,3 +302,7 @@ echo "$PLAN" | jq '{plan, usage, limits}'
 9. **Preview generated images before uploading.** After generating an image with Fireworks, use the Read tool to preview it visually before uploading to Posta. This prevents wasted uploads and media quota.
 
 10. **Use `posta_create_post_from_file` for multiline captions.** Write the caption to a temp file and use the file-based helper instead of trying to embed multiline text in JSON strings. This avoids escaping issues.
+
+11. **Always generate hashtags for posts.** When creating a post, always include relevant hashtags in the `hashtags` array. Generate 5–10 hashtags based on the caption content, target platform, and topic. Mix broad reach tags (e.g. #AI, #Marketing) with niche tags (e.g. #LaborMarket, #FutureOfWork). Do not wait for the user to ask — hashtags should be included by default on every post.
+
+12. **Use `/tmp/.posta_last_response` for captured output.** When capturing `posta_api` output in a variable with `$()`, avoid using `echo` to re-output it — macOS echo corrupts `\n` in JSON strings. Instead pipe directly (`posta_api ... | jq`) or read from the file (`jq ... /tmp/.posta_last_response`).
