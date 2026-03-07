@@ -244,8 +244,13 @@ posta_api() {
     return 1
   fi
 
-  # Sanitize control characters that break jq, output to stdout
-  posta_sanitize_json "$tmpfile"
+  # Sanitize control characters that break jq, output to stdout.
+  # Also saved to /tmp/.posta_last_response for safe access when callers
+  # need to avoid bash echo corrupting \n in JSON strings.
+  # Use: posta_api ... | jq    (pipe, always safe)
+  # Or:  posta_api ... > /dev/null; jq ... /tmp/.posta_last_response
+  posta_sanitize_json "$tmpfile" > /tmp/.posta_last_response
+  cat /tmp/.posta_last_response
   rm -f "$tmpfile"
 }
 
