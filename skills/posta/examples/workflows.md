@@ -82,7 +82,7 @@ MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "image/png")
 
 # Create and schedule — use file helper for multiline captions
 echo "${CAPTION_TEXT}" > /tmp/posta_caption.txt
-POST=$(posta_create_post_from_file /tmp/posta_caption.txt "[\"${MEDIA_ID}\"]" "$ACCOUNT_IDS_JSON" true)
+POST=$(posta_create_post_from_file /tmp/posta_caption.txt "[\"${MEDIA_ID}\"]" "$ACCOUNT_IDS_JSON" true '["hashtag1", "hashtag2"]')
 
 POST_ID=$(echo "$POST" | jq -r '.id')
 posta_schedule_post "$POST_ID" "2026-03-02T09:00:00Z"
@@ -304,14 +304,11 @@ EOF
 MEDIA_ID=$(posta_upload_media /tmp/eu_data.png "image/png")
 
 # Create post from file — handles all escaping correctly
-POST=$(posta_create_post_from_file /tmp/caption.txt "[\"${MEDIA_ID}\"]" "[\"${LINKEDIN_ID}\"]" true)
+POST=$(posta_create_post_from_file /tmp/caption.txt "[\"${MEDIA_ID}\"]" "[\"${LINKEDIN_ID}\"]" true '["datasovereignty", "EU", "cloud", "tech"]')
 POST_ID=$(echo "$POST" | jq -r '.id')
 
 # Review the created post
 posta_get_post "$POST_ID" | jq '{id, caption, status}'
-
-# Update caption if needed
-posta_update_post "$POST_ID" '{"hashtags": ["datasovereignty", "EU", "cloud", "tech"]}'
 
 # After user confirms, schedule
 posta_schedule_post "$POST_ID" "2026-03-06T09:00:00Z"

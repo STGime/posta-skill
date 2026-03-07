@@ -417,6 +417,7 @@ posta_create_post_from_file() {
   local media_ids_json="${2:-[]}"
   local account_ids_json="$3"
   local is_draft="${4:-true}"
+  local hashtags_json="${5:-[]}"
 
   local payload
   payload=$(jq -n \
@@ -424,7 +425,8 @@ posta_create_post_from_file() {
     --argjson mediaIds "$media_ids_json" \
     --argjson accountIds "$account_ids_json" \
     --argjson isDraft "$is_draft" \
-    '{caption: $caption, mediaIds: $mediaIds, socialAccountIds: $accountIds, isDraft: $isDraft, hashtags: []}')
+    --argjson hashtags "$hashtags_json" \
+    '{caption: $caption, mediaIds: $mediaIds, socialAccountIds: $accountIds, isDraft: $isDraft, hashtags: $hashtags}')
 
   posta_api POST "/posts" "$payload"
 }

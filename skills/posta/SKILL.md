@@ -135,7 +135,7 @@ Line two with details.
 
 Call to action here.
 EOF
-POST=$(posta_create_post_from_file /tmp/caption.txt '["media-uuid"]' '["35", "42"]' true)
+POST=$(posta_create_post_from_file /tmp/caption.txt '["media-uuid"]' '["35", "42"]' true '["tag1", "tag2"]')
 POST_ID=$(echo "$POST" | jq -r '.id')
 ```
 
