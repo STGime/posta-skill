@@ -50,26 +50,22 @@ cp -r ~/posta-skill/skills/posta .claude/skills/posta
 
 ### OpenClaw
 
-**Option A: From ClawHub**
-
-```bash
-# In an OpenClaw session:
-/skill install STGime/posta-skill
-```
-
-**Option B: Local directory**
+**Option A: Managed skill (persistent across sessions)**
 
 ```bash
 git clone https://github.com/STGime/posta-skill.git ~/posta-skill
-openclaw --skill-dir ~/posta-skill
+ln -s ~/posta-skill/skills/posta ~/.openclaw/skills/posta
 ```
 
-**Option C: Workspace-level skill**
+**Option B: Workspace-level skill (single workspace)**
 
 ```bash
+git clone https://github.com/STGime/posta-skill.git ~/posta-skill
 mkdir -p skills
 cp -r ~/posta-skill/skills/posta skills/posta
 ```
+
+To update later, `git pull` in `~/posta-skill` — symlinks (Option A) pick up changes automatically.
 
 ### Verify Installation
 
@@ -316,7 +312,7 @@ When you ask the AI to perform social media tasks, it:
 | TikTok | Yes | Yes | Yes | Yes |
 | Facebook | Yes | Yes | Yes | Yes |
 | X/Twitter | Yes | Yes | Yes | Yes |
-| LinkedIn | Yes | Yes | Yes | Yes |
+| LinkedIn | Yes | Yes | Yes | No |
 | YouTube | Yes | Yes | Yes | Yes |
 | Pinterest | Yes | Yes | Yes | Yes |
 | Threads | Yes | Yes | Yes | Yes |

@@ -5,7 +5,7 @@ license: MIT
 homepage: https://github.com/STGime/posta-skill
 metadata:
   author: Posta
-  version: 1.1.0
+  version: 1.2.0
   tags:
     - social-media
     - scheduling
