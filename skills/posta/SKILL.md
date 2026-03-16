@@ -5,7 +5,7 @@ license: MIT
 homepage: https://github.com/STGime/posta-skill
 metadata:
   author: Posta
-  version: 1.2.1
+  version: 1.2.2
   tags:
     - social-media
     - scheduling
@@ -43,18 +43,17 @@ If `POSTA_API_TOKEN` is set, email/password are not needed and the login flow is
 ### Optional Environment Variables
 
 - `POSTA_BASE_URL` — API base URL (default: `https://api.getposta.app/v1`)
-- `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation). Keys start with `fw_`. Get one at https://fireworks.ai/account/api-keys. The skill auto-discovers this from env vars, `.env.development`, `~/.zshrc`, `~/.bashrc`, or `~/.posta/credentials`.
+- `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation). Keys start with `fw_`. Get one at https://fireworks.ai/account/api-keys. The skill auto-discovers this from env vars, `~/.posta/credentials`, or `.env` files.
 - `GEMINI_API_KEY` — Google Gemini API key (for caption/text generation)
 - `OPENAI_API_KEY` — OpenAI API key (alternative text generation)
 
 ### Credentials Auto-Discovery
 
-The skill searches a fixed list of files for `POSTA_API_TOKEN` (or legacy `POSTA_EMAIL`/`POSTA_PASSWORD`). Only exact variable names are matched — no other file content is read. Search order:
+The skill searches a fixed list of dedicated config files for `POSTA_API_TOKEN` (or legacy `POSTA_EMAIL`/`POSTA_PASSWORD`). Only exact variable names are matched — no other file content is read. Shell profiles (`~/.zshrc`, `~/.bashrc`) are **never** accessed. Search order:
 
 1. Already-set environment variables (no file access)
 2. `~/.posta/credentials` — dedicated Posta config file (preferred)
-3. `~/.zshrc` and `~/.bashrc` — standard shell profiles
-4. `.env`, `.env.local`, `.env.production` in the working directory
+3. `.env`, `.env.local`, `.env.production` in the working directory
 
 If `POSTA_API_TOKEN` is found, the skill uses it immediately and skips email/password lookup. See `SECURITY.md` in the repo root for full details.
 
@@ -406,7 +405,7 @@ posta_refresh_all_analytics  # Rate limited: 1 per hour
 
 10. **Use `posta_create_post_from_file` for multiline captions.** Write the caption to a temp file and use the file-based helper instead of trying to embed multiline text in JSON strings. This avoids escaping issues.
 
-11. **Always generate hashtags for posts.** When creating a post, always include relevant hashtags in the `hashtags` array. Generate 5–10 hashtags based on the caption content, target platform, and topic. Mix broad reach tags (e.g. #AI, #Marketing) with niche tags (e.g. #LaborMarket, #FutureOfWork). Do not wait for the user to ask — hashtags should be included by default on every post.
+11. **Suggest hashtags for posts.** When creating a post, suggest 5–10 relevant hashtags based on the caption content, target platform, and topic. Mix broad reach tags (e.g. #AI, #Marketing) with niche tags (e.g. #LaborMarket, #FutureOfWork). Show the suggested hashtags to the user and include them in the post only after the user approves or edits them.
 
 12. **Use `/tmp/.posta_last_response` for captured output.** When capturing `posta_api` output in a variable with `$()`, avoid using `echo` to re-output it — macOS echo corrupts `\n` in JSON strings. Instead pipe directly (`posta_api ... | jq`) or read from the file (`jq ... /tmp/.posta_last_response`).
 

@@ -142,11 +142,10 @@ export POSTA_PASSWORD="your-posta-password"
 
 ### Credentials Auto-Discovery
 
-The skill automatically discovers credentials from multiple locations (in order):
+The skill discovers credentials from dedicated config files only (shell profiles are **never** read):
 1. Already-set environment variables
-2. `~/.posta/credentials`
-3. `~/.zshrc` and `~/.bashrc`
-4. `.env`, `.env.local`, `.env.production` in the current directory
+2. `~/.posta/credentials` (preferred)
+3. `.env`, `.env.local`, `.env.production` in the current directory
 
 ---
 

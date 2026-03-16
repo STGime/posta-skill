@@ -34,12 +34,9 @@ posta_sanitize_json() {
 # a full explanation of why each location is checked and what data is read.
 
 # Fixed, auditable list of files the skill will ever read for credentials.
-# Each entry is either a dedicated config file or a standard developer dotfile
-# where users commonly place `export VAR=value` lines.
+# Only dedicated config files are checked — shell profiles are NOT read.
 _POSTA_CREDENTIAL_SOURCES=(
   "$HOME/.posta/credentials"   # dedicated Posta config (preferred)
-  "$HOME/.zshrc"               # shell profile — common for export lines
-  "$HOME/.bashrc"              # shell profile — common for export lines
   ".env"                       # project dotenv
   ".env.local"                 # project dotenv (local override)
   ".env.production"            # project dotenv (production)
@@ -108,7 +105,7 @@ posta_discover_credentials() {
 
   # 3. Discover FIREWORKS_API_KEY for AI image generation (optional)
   if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
-    for src in "${_POSTA_CREDENTIAL_SOURCES[@]}" ".env.development"; do
+    for src in "${_POSTA_CREDENTIAL_SOURCES[@]}"; do
       if [[ -f "$src" ]]; then
         local val
         val=$(_posta_extract_var FIREWORKS_API_KEY "$src")
@@ -327,6 +324,20 @@ posta_upload_from_url() {
   local url="$1"
   local mime_type="${2:-}"
   local filename="${3:-downloaded_media}"
+
+  # Validate URL: must be HTTPS to prevent SSRF and local file access
+  if [[ ! "$url" =~ ^https:// ]]; then
+    echo "ERROR: Only HTTPS URLs are allowed for security. Got: ${url}" >&2
+    return 1
+  fi
+
+  # Block private/internal IPs
+  local host
+  host=$(echo "$url" | sed -E 's|^https://([^/:]+).*|\1|')
+  if [[ "$host" =~ ^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.|0\.|localhost|metadata\.google) ]]; then
+    echo "ERROR: URLs pointing to private/internal networks are not allowed." >&2
+    return 1
+  fi
 
   # Determine extension from mime type (or URL)
   local ext=""
@@ -647,7 +658,7 @@ fireworks_validate_key() {
 
   if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
     echo "ERROR: FIREWORKS_API_KEY is not set." >&2
-    echo "Set it in ~/.posta/credentials, ~/.zshrc, .env, or as an env var" >&2
+    echo "Set it in ~/.posta/credentials, .env, or as an env var" >&2
     return 1
   fi
 
