@@ -403,3 +403,5 @@ posta_refresh_all_analytics  # Rate limited: 1 per hour
 13. **Use platform discovery for validation.** Before creating posts for unfamiliar platforms, call `posta_get_platform_specs` or `posta_get_platform "<platform>"` to check character limits, required media dimensions, and supported features. This prevents failed posts due to platform constraints.
 
 14. **Auto MIME detection for uploads.** When uploading media, you can omit the MIME type parameter — `posta_upload_media` and `posta_upload_from_url` auto-detect it from the file content or extension. Only specify MIME type manually when the auto-detection might be wrong (e.g., `.bin` files).
+
+15. **Always set TikTok privacy level.** When creating posts that include TikTok, you MUST include `platformConfigurations.tiktok.privacyLevel` — TikTok requires it and publishing will fail without it. Use `"PUBLIC_TO_EVERYONE"` unless the user specifies otherwise. Valid values: `PUBLIC_TO_EVERYONE`, `MUTUAL_FOLLOW_FRIENDS`, `SELF_ONLY`, `FOLLOWER_OF_CREATOR`.
