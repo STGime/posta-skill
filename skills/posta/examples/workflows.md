@@ -14,7 +14,7 @@
 7. On approval, publish immediately or schedule
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
 # Get accounts
 ACCOUNTS=$(posta_list_accounts)
@@ -44,53 +44,7 @@ posta_publish_post "$POST_ID"
 
 ---
 
-## 2. Generate Stupid Correlation and Schedule
-
-**User:** "Generate a stupid correlation and schedule it for tomorrow at 9am on all accounts"
-
-**Claude's steps:**
-1. Authenticate with Posta
-2. List accounts to get all active account IDs
-3. Call statapp `/api/generate/random` with appropriate aspect ratio
-4. Display the generated correlation (headline, caption, image) to user
-5. Upload the generated image to Posta
-6. Create post with the generated caption and hashtags
-7. Schedule for tomorrow at 9:00 AM in the user's timezone
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
-
-# Get all accounts
-ACCOUNTS=$(posta_list_accounts)
-# Account IDs are integers — convert to string array for socialAccountIds
-ACCOUNT_IDS_JSON=$(echo "$ACCOUNTS" | jq '[.[].id | tostring]')
-
-# Generate correlation (square for multi-platform)
-CORRELATION=$(statapp_generate_random "square" "classic" false)
-
-IMAGE_URL=$(echo "$CORRELATION" | jq -r '.image.url')
-HEADLINE=$(echo "$CORRELATION" | jq -r '.caption.headline')
-CAPTION_TEXT=$(echo "$CORRELATION" | jq -r '.caption.caption')
-
-# Show user the result for confirmation
-echo "Generated: ${HEADLINE}"
-echo "Caption: ${CAPTION_TEXT}"
-echo "Image: ${IMAGE_URL}"
-
-# Upload to Posta
-MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "image/png")
-
-# Create and schedule — use file helper for multiline captions
-echo "${CAPTION_TEXT}" > /tmp/posta_caption.txt
-POST=$(posta_create_post_from_file /tmp/posta_caption.txt "[\"${MEDIA_ID}\"]" "$ACCOUNT_IDS_JSON" true '["hashtag1", "hashtag2"]')
-
-POST_ID=$(echo "$POST" | jq -r '.id')
-posta_schedule_post "$POST_ID" "2026-03-02T09:00:00Z"
-```
-
----
-
-## 3. View Best Performing Posts
+## 2. View Best Performing Posts
 
 **User:** "Show me my best performing posts this month"
 
@@ -102,7 +56,7 @@ posta_schedule_post "$POST_ID" "2026-03-02T09:00:00Z"
 5. Suggest insights (best day, best platform, best content type)
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
 # Get overview stats
 OVERVIEW=$(posta_get_analytics_overview "30d")
@@ -120,112 +74,7 @@ echo "$TOP_POSTS" | jq '.items[] | {caption: .caption[:50], platform: .platform,
 
 ---
 
-## 4. Create Portrait Video for TikTok
-
-**User:** "Create a video correlation for TikTok and schedule it for Friday at 6pm"
-
-**Claude's steps:**
-1. Authenticate with Posta
-2. Find the TikTok account
-3. Generate correlation with portrait aspect ratio and video
-4. Show preview (headline, caption, image thumbnail)
-5. Upload video to Posta
-6. Create post with TikTok platform configuration
-7. Schedule for Friday at 6pm
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
-
-# Find TikTok account
-ACCOUNTS=$(posta_list_accounts)
-# Account IDs are integers — convert to string
-TIKTOK_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "tiktok") | .id | tostring')
-
-# Generate with video (portrait for TikTok)
-RESULT=$(statapp_generate_random "portrait" "neon" true)
-
-VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url')
-CAPTION_TEXT=$(echo "$RESULT" | jq -r '.caption.caption')
-
-# Upload video to Posta
-MEDIA_ID=$(posta_upload_from_url "$VIDEO_URL" "video/mp4")
-
-# Create post with TikTok config
-POST=$(posta_create_post '{
-  "caption": "'"${CAPTION_TEXT}"'",
-  "hashtags": ["stupidcorrelations", "data", "funfacts", "statistics", "correlation"],
-  "mediaIds": ["'"${MEDIA_ID}"'"],
-  "socialAccountIds": ["'"${TIKTOK_ID}"'"],
-  "isDraft": true,
-  "platformConfigurations": {
-    "tiktok": {
-      "privacyLevel": "PUBLIC_TO_EVERYONE",
-      "allowComment": true,
-      "allowDuet": false,
-      "allowStitch": false
-    }
-  }
-}')
-
-POST_ID=$(echo "$POST" | jq -r '.id')
-
-# Schedule for Friday at 6pm
-posta_schedule_post "$POST_ID" "2026-03-06T18:00:00Z"
-```
-
----
-
-## 5. Batch Generate Marketing Videos and Schedule Them
-
-**User:** "Generate 5 marketing videos and schedule them across the week"
-
-**Claude's steps:**
-1. Run the `create-promo-videos.js` script on the statapp server to generate 5 videos
-2. Authenticate with Posta and list accounts
-3. Upload each video to Posta
-4. Create posts with generated captions and schedule across the week at optimal times
-5. Show preview of the full schedule for confirmation
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
-
-# Step 1: Generate 5 promo videos (run on statapp server)
-cd ~/statapp_backend
-node scripts/create-promo-videos.js 5
-# Output: promo-videos/promo_1_*.mp4, promo_2_*.mp4, etc.
-
-# Step 2: Get best posting times from Posta analytics
-BEST_TIMES=$(posta_get_best_times)
-
-# Step 3: Get TikTok account
-ACCOUNTS=$(posta_list_accounts)
-# Account IDs are integers — convert to string
-TIKTOK_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "tiktok") | .id | tostring')
-
-# Step 4: Upload each video and schedule
-for video in ~/statapp_backend/promo-videos/promo_*.mp4; do
-  MEDIA_ID=$(posta_upload_media "$video" "video/mp4")
-
-  POST=$(posta_create_post '{
-    "caption": "Mind-blowing correlation! 🤯📊 #stupidcorrelations #data #funfacts",
-    "hashtags": ["stupidcorrelations", "data", "statistics", "correlation", "funfacts"],
-    "mediaIds": ["'"${MEDIA_ID}"'"],
-    "socialAccountIds": ["'"${TIKTOK_ID}"'"],
-    "isDraft": true,
-    "platformConfigurations": {
-      "tiktok": { "privacyLevel": "PUBLIC_TO_EVERYONE", "allowComment": true }
-    }
-  }')
-
-  POST_ID=$(echo "$POST" | jq -r '.id')
-  # Schedule at optimal time (calculate per day)
-  posta_schedule_post "$POST_ID" "2026-03-03T18:00:00Z"
-done
-```
-
----
-
-## 6. Generate AI Image and Caption from Scratch
+## 3. Generate AI Image and Caption from Scratch
 
 **User:** "Generate a social media post about spring flowers"
 
@@ -238,7 +87,7 @@ done
 6. Create the post
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
 # Generate image
 curl -s -X POST \
@@ -271,7 +120,7 @@ echo "Image uploaded. Ready to create post."
 
 ---
 
-## 7. Create Post with Multiline Caption
+## 4. Create Post with Multiline Caption
 
 **User:** "Create a LinkedIn post about EU data sovereignty with a detailed caption"
 
@@ -281,7 +130,7 @@ echo "Image uploaded. Ready to create post."
 3. Manage the post lifecycle with get/update/delete helpers
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
 # Get LinkedIn account (IDs are integers, convert to string)
 ACCOUNTS=$(posta_list_accounts)
@@ -315,4 +164,107 @@ posta_schedule_post "$POST_ID" "2026-03-06T09:00:00Z"
 
 # Or if user changes mind, delete
 # posta_delete_post "$POST_ID"
+```
+
+---
+
+## 5. Check Platform Specs Before Posting
+
+**User:** "What are the character limits and media requirements for each platform?"
+
+**Claude's steps:**
+1. Fetch platform specifications
+2. Display formatted table of limits
+
+```bash
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+
+# Get all platform specs at once
+SPECS=$(posta_get_platform_specs)
+echo "$SPECS" | jq '.'
+
+# Or get specs for a specific platform
+posta_get_platform "tiktok"
+
+# Get aspect ratio reference
+posta_get_aspect_ratios
+```
+
+---
+
+## 6. Compare Post Performance and Export Analytics
+
+**User:** "Compare my last 3 posts and export a report"
+
+**Claude's steps:**
+1. Get top posts to find IDs
+2. Compare posts side by side
+3. Export analytics
+
+```bash
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+
+# Get recent posts with analytics
+TOP=$(posta_get_analytics_posts 3 0 "engagements" "desc")
+POST_IDS=$(echo "$TOP" | jq -r '[.items[].id] | join(",")')
+
+# Compare them side by side
+COMPARISON=$(posta_compare_posts "$POST_IDS")
+echo "$COMPARISON" | jq '.'
+
+# Export full analytics report
+posta_export_analytics_csv "30d"
+posta_export_analytics_pdf "90d"
+
+# Check engagement benchmarks
+posta_get_benchmarks
+```
+
+---
+
+## 7. View Content Calendar and Manage Schedule
+
+**User:** "Show me what's scheduled for next week"
+
+**Claude's steps:**
+1. Fetch calendar view for the date range
+2. Display posts organized by day
+
+```bash
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+
+# Get next week's calendar
+CALENDAR=$(posta_get_calendar "2026-03-16" "2026-03-22")
+echo "$CALENDAR" | jq '.items[] | {id, caption: .caption[:60], status, scheduledAt, platforms: [.socialAccounts[].platform]}'
+
+# To reschedule a post: cancel then re-schedule
+posta_cancel_post "$POST_ID"
+posta_schedule_post "$POST_ID" "2026-03-18T10:00:00Z"
+```
+
+---
+
+## 8. Media Library Management
+
+**User:** "Show me my uploaded media and clean up old files"
+
+```bash
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+
+# List all media
+ALL=$(posta_list_media "" "" 50)
+echo "$ALL" | jq '.items[] | {id, name, type, mime_type, processing_status, created_at}'
+
+# List only completed images
+IMAGES=$(posta_list_media "image" "completed")
+
+# List only videos
+VIDEOS=$(posta_list_media "video")
+
+# Delete unused media
+posta_delete_media "$MEDIA_ID"
+
+# Generate a carousel PDF from multiple images
+CAROUSEL=$(posta_generate_carousel_pdf '["id1", "id2", "id3"]' "Weekly Highlights")
+echo "$CAROUSEL" | jq '{media_id, page_count}'
 ```

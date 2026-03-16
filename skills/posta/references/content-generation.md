@@ -162,7 +162,7 @@ Full workflow using bash helper functions:
 
 ```bash
 # Source the helper
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
 # 1. Generate image with Fireworks
 curl -s -X POST \

@@ -1,18 +1,21 @@
-# Posta Skill for Claude Code
+# Posta Skill
 
-A Claude Code plugin that enables social media content generation, scheduling, and analytics through [Posta](https://getposta.app).
+A social media management skill for AI coding assistants. Works with **Claude Code** and **OpenClaw**.
+
+Create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky — with AI content generation and analytics.
 
 ## Features
 
-- **Post Management** — Create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky
-- **Media Upload** — Upload images and videos via signed URL flow
-- **AI Content Generation** — Generate images (Fireworks.ai SDXL), captions, and hashtags (Gemini/OpenAI)
-- **Analytics** — View post performance, best posting times, trends, and engagement metrics
-- **Account Management** — List connected social accounts and their status
+- **Post Management** — Create, schedule, publish, update, and cancel posts across 9 platforms
+- **Media Upload** — Upload images and videos with auto MIME detection, manage media library, generate carousel PDFs
+- **AI Content Generation** — Generate images (Fireworks SDXL), captions and hashtags (Gemini/OpenAI)
+- **Analytics** — Performance overview, best posting times, trends, post comparison, hashtag analysis, benchmarks, CSV/PDF export
+- **Platform Discovery** — Query character limits, media requirements, and supported features per platform
+- **Content Calendar** — View scheduled and posted content across date ranges
+- **Account Management** — List connected social accounts, check status and token expiration
 
 ## Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and working
 - A [Posta](https://getposta.app) account with an active plan
 - At least one connected social media account in Posta
 - `curl` and `jq` available in your shell (`brew install jq` on macOS)
@@ -21,47 +24,56 @@ A Claude Code plugin that enables social media content generation, scheduling, a
 
 ## Installation
 
-### Option A: Install from GitHub (Recommended)
+### Claude Code
 
-Run these two commands inside a Claude Code session:
+**Option A: From GitHub (recommended)**
 
 ```bash
-# Step 1: Add the marketplace
+# In a Claude Code session:
 /plugin marketplace add STGime/posta-skill
-
-# Step 2: Install the plugin
 /plugin install posta-skill
 ```
 
-The plugin will be downloaded and available across all your projects.
-
-### Option B: Install from a local directory
-
-Clone the repo, then point Claude Code to it:
+**Option B: Local directory**
 
 ```bash
-# Clone the repo
 git clone https://github.com/STGime/posta-skill.git ~/posta-skill
-
-# Start Claude Code with the plugin loaded
 claude --plugin-dir ~/posta-skill
 ```
 
-### Option C: Project-level skill (no plugin install)
-
-If you only want the skill available in a single project, copy the skill folder into your project:
+**Option C: Project-level skill**
 
 ```bash
-# From your project root
 mkdir -p .claude/skills
 cp -r ~/posta-skill/skills/posta .claude/skills/posta
 ```
 
-The skill will auto-activate when you ask Claude about social media posting, scheduling, or content generation.
+### OpenClaw
 
-### Verify installation
+**Option A: From ClawHub**
 
-Start a new Claude Code session and say:
+```bash
+# In an OpenClaw session:
+/skill install STGime/posta-skill
+```
+
+**Option B: Local directory**
+
+```bash
+git clone https://github.com/STGime/posta-skill.git ~/posta-skill
+openclaw --skill-dir ~/posta-skill
+```
+
+**Option C: Workspace-level skill**
+
+```bash
+mkdir -p skills
+cp -r ~/posta-skill/skills/posta skills/posta
+```
+
+### Verify Installation
+
+Start a new session and say:
 
 ```
 Show me my connected social accounts
@@ -73,33 +85,17 @@ If the skill activates and attempts to authenticate, the installation is working
 
 ## Configuration
 
-The plugin needs credentials to connect to Posta and (optionally) to AI generation services.
+### Authentication (pick one)
 
-### Option 1: API Token (recommended)
+**API Token (recommended):**
 
-API tokens are the simplest and most secure way to authenticate. Generate one from your Posta dashboard or via the API, then set a single environment variable:
-
-**Shell profile (persistent across all sessions):**
 ```bash
-# ~/.zshrc or ~/.bash_profile
+# ~/.zshrc, ~/.bashrc, or ~/.posta/credentials
 export POSTA_API_TOKEN="posta_your_token_here"
 ```
 
-**Claude Code settings** — `~/.claude/settings.json`:
-```json
-{
-  "env": {
-    "POSTA_API_TOKEN": "posta_your_token_here"
-  }
-}
-```
+Generate a token via the API:
 
-**Dedicated credentials file** — `~/.posta/credentials`:
-```bash
-POSTA_API_TOKEN="posta_your_token_here"
-```
-
-To generate a token via the API (requires a one-time login):
 ```bash
 # Get a JWT first
 TOKEN=$(curl -sf -X POST https://api.getposta.app/v1/auth/login \
@@ -110,142 +106,250 @@ TOKEN=$(curl -sf -X POST https://api.getposta.app/v1/auth/login \
 curl -sf -X POST https://api.getposta.app/v1/auth/tokens \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Claude Code CLI"}' | jq '.token'
+  -d '{"name":"Posta Skill"}' | jq '.token'
 ```
 
 Save the returned `posta_...` token — it is shown only once.
 
-### Option 2: Email & Password (legacy)
+**Email & Password (legacy):**
 
-You can still use email/password. The plugin will log in and cache a JWT automatically.
-
-**Shell profile:**
 ```bash
 export POSTA_EMAIL="your@email.com"
 export POSTA_PASSWORD="your-posta-password"
 ```
 
-**Claude Code settings** — `~/.claude/settings.json`:
+### Platform-specific configuration
+
+<details>
+<summary>Claude Code settings — <code>~/.claude/settings.json</code></summary>
+
 ```json
 {
   "env": {
-    "POSTA_EMAIL": "your@email.com",
-    "POSTA_PASSWORD": "your-posta-password"
+    "POSTA_API_TOKEN": "posta_your_token_here"
   }
 }
 ```
+</details>
 
-> **Note:** Shell environment variables take precedence over settings files. Changes require restarting Claude Code.
+<details>
+<summary>OpenClaw settings — <code>~/.openclaw/config.json</code></summary>
+
+```json
+{
+  "env": {
+    "POSTA_API_TOKEN": "posta_your_token_here"
+  }
+}
+```
+</details>
+
+### Credentials Auto-Discovery
+
+The skill automatically discovers credentials from multiple locations (in order):
+1. Already-set environment variables
+2. `~/.posta/credentials`
+3. `~/.zshrc` and `~/.bashrc`
+4. `.env`, `.env.local`, `.env.production` in the current directory
 
 ---
 
-## Environment Variables Reference
+## Environment Variables
 
-### Authentication (one of the following)
+### Authentication
 
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `POSTA_API_TOKEN` | **Recommended.** Personal API token (starts with `posta_`) | `posta_a1b2c3d4...` |
-| `POSTA_EMAIL` | Your Posta account email (legacy) | `user@example.com` |
-| `POSTA_PASSWORD` | Your Posta account password (legacy) | `my-secure-password` |
+| `POSTA_EMAIL` | Account email (legacy) | `user@example.com` |
+| `POSTA_PASSWORD` | Account password (legacy) | `my-secure-password` |
 
-Set `POSTA_API_TOKEN` for the simplest setup. If set, email/password are not needed.
-
-### Posta API
+### API
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `POSTA_BASE_URL` | Override the Posta API base URL | `https://api.getposta.app/v1` |
+| `POSTA_BASE_URL` | Override API base URL | `https://api.getposta.app/v1` |
 
-You only need to set this if you're running a self-hosted Posta instance or connecting to a staging environment.
+### AI Content Generation (optional)
 
-### AI Content Generation
-
-These are optional. Each unlocks a different generation capability:
-
-| Variable | Service | What it enables | Where to get a key |
-|----------|---------|----------------|-------------------|
+| Variable | Service | What it enables | Get a key |
+|----------|---------|----------------|-----------|
 | `FIREWORKS_API_KEY` | [Fireworks.ai](https://fireworks.ai) | AI image generation (SDXL) | [fireworks.ai/account/api-keys](https://fireworks.ai/account/api-keys) |
 | `GEMINI_API_KEY` | [Google Gemini](https://ai.google.dev) | Caption and hashtag generation | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | `OPENAI_API_KEY` | [OpenAI](https://openai.com) | Alternative caption generation | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 
-You don't need all three — each is independent:
-- **Fireworks** is for generating images from text prompts
-- **Gemini** or **OpenAI** are for generating captions, hashtags, and post copy (pick one or both)
-- Without any generation keys, you can still upload your own media and create posts manually
+Each key is independent. Without any generation keys, you can still upload your own media and create posts.
 
-### Full configuration example
+### Full example
 
 ```bash
 # ~/.zshrc
-
-# Posta auth (recommended: API token)
 export POSTA_API_TOKEN="posta_a1b2c3d4e5f6..."
-
-# Optional — AI image generation
-export FIREWORKS_API_KEY="fw_1234567890abcdef"
-
-# Optional — AI text generation (pick one or both)
-export GEMINI_API_KEY="AIzaSy..."
-export OPENAI_API_KEY="sk-proj-..."
+export FIREWORKS_API_KEY="fw_1234567890abcdef"       # optional
+export GEMINI_API_KEY="AIzaSy..."                     # optional
+export OPENAI_API_KEY="sk-proj-..."                   # optional
 ```
-
-After saving, reload your shell and restart Claude Code:
-
-```bash
-source ~/.zshrc
-```
-
----
-
-## Security Notes
-
-- **Never commit credentials to git.** Use `.claude/settings.local.json` (gitignored by default) or shell profile for secrets.
-- **API tokens are the recommended auth method.** They don't expose your account password, are long-lived, and can be revoked individually without changing your password.
-- The plugin caches your Posta JWT token at `/tmp/.posta_token`. This is a temporary file that expires with the token and is cleared on reboot. API tokens skip this cache entirely.
-- API keys for Fireworks, Gemini, and OpenAI are sent only to their respective services — never to Posta.
-- The plugin always creates posts as **drafts first** and asks for your confirmation before publishing or scheduling.
-- To revoke an API token, use `DELETE /v1/auth/tokens/:id` or manage tokens in your Posta dashboard.
 
 ---
 
 ## Usage Examples
 
-Once configured, just ask Claude naturally:
+### Create and publish a post
 
 ```
-> Show me my connected social accounts
-
-> Upload this image and post it to Instagram with the caption "Hello world!"
-
-> Show me my best performing posts this month
-
-> What are the best times to post based on my analytics?
-
-> Generate a social media post about spring flowers with AI image and caption
+Upload this image to Instagram and Twitter with the caption "Hello world!"
 ```
 
-## What the plugin does behind the scenes
+The skill will:
+1. List your connected accounts to find Instagram and X/Twitter
+2. Auto-detect the image MIME type and upload it
+3. Create a draft post with generated hashtags
+4. Show you a preview for confirmation
+5. Publish or schedule on your approval
 
-When you ask Claude to perform social media tasks, it:
+### Generate AI content from scratch
 
-1. **Authenticates** with your Posta account using `POSTA_API_TOKEN` (or `POSTA_EMAIL` / `POSTA_PASSWORD`)
+```
+Generate a social media post about spring flowers with an AI image and caption
+```
+
+The skill will:
+1. Generate an image using Fireworks SDXL
+2. Generate a caption using Gemini or OpenAI
+3. Generate relevant hashtags
+4. Upload the image and create a draft post
+5. Ask which accounts to post to
+
+### View analytics and best posting times
+
+```
+Show me my best performing posts this month and suggest when to post next
+```
+
+The skill will:
+1. Fetch analytics overview for the last 30 days
+2. Get top posts sorted by engagements
+3. Fetch best posting times heatmap
+4. Display everything in a formatted table with insights
+
+### Check platform specs before posting
+
+```
+What are the character limits and media requirements for TikTok?
+```
+
+The skill will:
+1. Query the platform specifications API
+2. Return character limits, supported media formats, aspect ratios, and features
+
+### Manage your content calendar
+
+```
+Show me what's scheduled for next week
+```
+
+The skill will:
+1. Fetch the calendar view for the date range
+2. Display posts organized by day with status and platforms
+
+### Compare post performance
+
+```
+Compare my last 3 posts and export a report
+```
+
+The skill will:
+1. Get recent posts with analytics
+2. Compare them side by side (engagements, impressions, reach)
+3. Export analytics as CSV or PDF
+
+### Media library management
+
+```
+Show me my uploaded media and clean up unused files
+```
+
+The skill will:
+1. List media with type/status filters
+2. Show processing status for each item
+3. Delete items you identify as unused
+
+### Generate a carousel
+
+```
+Create a carousel from these 5 images for Instagram
+```
+
+The skill will:
+1. Upload the images
+2. Generate a PDF carousel
+3. Create a draft post with the carousel attached
+
+### Schedule with optimal timing
+
+```
+Schedule this post for the best time to reach my audience
+```
+
+The skill will:
+1. Fetch best-times analytics for your accounts
+2. Recommend the highest-engagement time slot
+3. Schedule the post after your confirmation
+
+---
+
+## How It Works
+
+When you ask the AI to perform social media tasks, it:
+
+1. **Authenticates** with your Posta account using `POSTA_API_TOKEN` (or email/password)
 2. **Calls the Posta API** via the included bash helper script (handles token caching, retries, media upload)
 3. **Shows you a preview** before publishing — caption, platforms, media, and scheduled time
 4. **Suggests optimal posting times** from your analytics data when scheduling
 5. **Generates content** using Fireworks/Gemini/OpenAI when asked (with your confirmation before spending API credits)
 
+## Supported Platforms
+
+| Platform | Post | Image | Video | Analytics |
+|----------|------|-------|-------|-----------|
+| Instagram | Yes | Yes | Yes | Yes |
+| TikTok | Yes | Yes | Yes | Yes |
+| Facebook | Yes | Yes | Yes | Yes |
+| X/Twitter | Yes | Yes | Yes | Yes |
+| LinkedIn | Yes | Yes | Yes | Yes |
+| YouTube | Yes | Yes | Yes | Yes |
+| Pinterest | Yes | Yes | Yes | Yes |
+| Threads | Yes | Yes | Yes | Yes |
+| Bluesky | Yes | Yes | Yes | Yes |
+
+## Security Notes
+
+- **Never commit credentials to git.** Use environment variables or `~/.posta/credentials` for secrets.
+- **API tokens are recommended.** They don't expose your password, are long-lived, and can be revoked individually.
+- JWT token cache at `/tmp/.posta_token` is temporary and cleared on reboot. API tokens skip this entirely.
+- AI generation keys (Fireworks, Gemini, OpenAI) are sent only to their respective services — never to Posta.
+- The skill always creates posts as **drafts first** and asks for confirmation before publishing.
+
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| "POSTA_EMAIL and POSTA_PASSWORD must be set" | Set `POSTA_API_TOKEN` (recommended) or both `POSTA_EMAIL` and `POSTA_PASSWORD`, then restart Claude Code |
-| "API token is invalid or revoked" | Generate a new API token — the current one was revoked or is malformed |
-| "Login failed — no token in response" | Check your email/password. Try logging in at [getposta.app](https://getposta.app) to verify |
-| API returns 403 | Your Posta plan may have expired. Run: "Check my plan status" |
-| Image generation fails silently | Verify `FIREWORKS_API_KEY` is set correctly. Check your Fireworks billing |
-| Changes to env vars not taking effect | Restart Claude Code — environment variables are read at startup |
+| "POSTA_EMAIL and POSTA_PASSWORD must be set" | Set `POSTA_API_TOKEN` (recommended) or both email and password, then restart |
+| "API token is invalid or revoked" | Generate a new API token from your Posta dashboard |
+| "Login failed — no token in response" | Check your email/password at [getposta.app](https://getposta.app) |
+| API returns 403 | Your plan may have expired — ask "Check my plan status" |
+| Image generation fails silently | Verify `FIREWORKS_API_KEY` is set correctly |
+| Changes to env vars not taking effect | Restart your session — env vars are read at startup |
 | `jq: command not found` | Install jq: `brew install jq` (macOS) or `apt install jq` (Linux) |
+
+## Compatibility
+
+| Platform | Version | Status |
+|----------|---------|--------|
+| Claude Code | 1.0+ | Fully supported |
+| OpenClaw | 1.0+ | Fully supported |
+
+Both platforms use the AgentSkills `SKILL.md` format. The skill auto-detects which platform it's running on via environment variables (`CLAUDE_PLUGIN_ROOT` vs `OPENCLAW_SKILL_ROOT`).
 
 ## License
 

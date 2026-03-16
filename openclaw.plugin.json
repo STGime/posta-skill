@@ -7,5 +7,12 @@
     "url": "https://getposta.app"
   },
   "repository": "https://github.com/STGime/posta-skill",
-  "license": "MIT"
+  "license": "MIT",
+  "skills": [
+    {
+      "path": "skills/posta",
+      "name": "posta",
+      "description": "Social media management — create, schedule, publish posts across 9 platforms with AI content generation and analytics"
+    }
+  ]
 }

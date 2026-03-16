@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
 # posta-api.sh — Bash helper for Posta API interactions
-# Source this file: source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+# Source this file: source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
 set -euo pipefail
 
 POSTA_BASE_URL="${POSTA_BASE_URL:-https://api.getposta.app/v1}"
 POSTA_TOKEN_FILE="/tmp/.posta_token"
 
-STATAPP_BASE_URL="${STATAPP_URL:-}"
-STATAPP_TOKEN_FILE="/tmp/.statapp_token"
-STATAPP_DEVICE_ID="${STATAPP_DEVICE_ID:-claude-plugin-$(whoami)}"
-
 # ─── JSON Parsing Helper ─────────────────────────────────────────────────────
 
 # Resolve script directory (works in both bash and zsh)
 POSTA_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd 2>/dev/null)" || \
 POSTA_SCRIPT_DIR="$(cd "$(dirname "${0}")" && pwd 2>/dev/null)" || \
-POSTA_SCRIPT_DIR="/Users/stefangimeson/.claude/plugins/cache/posta-plugins/posta-skill/1.0.0/skills/posta/scripts"
+POSTA_SCRIPT_DIR="$(pwd)/skills/posta/scripts"
 
 posta_sanitize_json() {
   # Sanitize a JSON API response so jq can parse it.
@@ -254,11 +250,56 @@ posta_api() {
   rm -f "$tmpfile"
 }
 
+# ─── MIME Type Detection ─────────────────────────────────────────────────────
+
+posta_detect_mime() {
+  # Auto-detect MIME type from a file path using the `file` command.
+  # Falls back to extension-based detection if `file` is unavailable.
+  local filepath="$1"
+  local detected=""
+
+  # Try system `file` command first (available on macOS and Linux)
+  if command -v file &>/dev/null; then
+    detected=$(file --mime-type -b "$filepath" 2>/dev/null)
+  fi
+
+  # Validate detected type is in the allowed list, otherwise fall back to extension
+  case "$detected" in
+    image/jpeg|image/png|image/webp|image/gif|video/mp4|video/quicktime|video/webm)
+      echo "$detected"
+      return 0
+      ;;
+  esac
+
+  # Extension-based fallback
+  local ext="${filepath##*.}"
+  ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+  case "$ext" in
+    jpg|jpeg) echo "image/jpeg" ;;
+    png)      echo "image/png" ;;
+    webp)     echo "image/webp" ;;
+    gif)      echo "image/gif" ;;
+    mp4)      echo "video/mp4" ;;
+    mov)      echo "video/quicktime" ;;
+    webm)     echo "video/webm" ;;
+    *)
+      echo "ERROR: Cannot detect MIME type for '${filepath}'. Specify it manually." >&2
+      return 1
+      ;;
+  esac
+}
+
 # ─── Media Upload (3-step signed URL flow) ────────────────────────────────────
 
 posta_upload_media() {
   local filepath="$1"
-  local mime_type="$2"
+  local mime_type="${2:-}"
+
+  # Auto-detect MIME type if not provided
+  if [[ -z "$mime_type" ]]; then
+    mime_type=$(posta_detect_mime "$filepath")
+  fi
+
   local filename
   filename=$(basename "$filepath")
   local size_bytes
@@ -302,18 +343,32 @@ posta_upload_media() {
 
 posta_upload_from_url() {
   local url="$1"
-  local mime_type="$2"
+  local mime_type="${2:-}"
   local filename="${3:-downloaded_media}"
 
-  # Determine extension from mime type
+  # Determine extension from mime type (or URL)
   local ext=""
-  case "$mime_type" in
-    image/png)  ext=".png" ;;
-    image/jpeg) ext=".jpg" ;;
-    image/webp) ext=".webp" ;;
-    video/mp4)  ext=".mp4" ;;
-    *)          ext="" ;;
-  esac
+  if [[ -n "$mime_type" ]]; then
+    case "$mime_type" in
+      image/png)       ext=".png" ;;
+      image/jpeg)      ext=".jpg" ;;
+      image/webp)      ext=".webp" ;;
+      image/gif)       ext=".gif" ;;
+      video/mp4)       ext=".mp4" ;;
+      video/quicktime) ext=".mov" ;;
+      video/webm)      ext=".webm" ;;
+      *)               ext="" ;;
+    esac
+  else
+    # Try to infer from URL path
+    local url_ext="${url##*.}"
+    url_ext=$(echo "$url_ext" | tr '[:upper:]' '[:lower:]' | sed 's/[?#].*//')
+    case "$url_ext" in
+      jpg|jpeg|png|webp|gif|mp4|mov|webm)
+        ext=".${url_ext}"
+        ;;
+    esac
+  fi
 
   local tmpfile="/tmp/posta_upload_${RANDOM}${ext}"
 
@@ -324,6 +379,11 @@ posta_upload_from_url() {
     echo "ERROR: Failed to download from ${url}" >&2
     rm -f "$tmpfile"
     return 1
+  fi
+
+  # Auto-detect MIME type if not provided
+  if [[ -z "$mime_type" ]]; then
+    mime_type=$(posta_detect_mime "$tmpfile")
   fi
 
   # Upload via standard flow
@@ -409,6 +469,172 @@ posta_get_media() {
   posta_api GET "/media/${media_id}"
 }
 
+# ─── Media Library Management ────────────────────────────────────────────────
+
+posta_list_media() {
+  # Usage: posta_list_media [type] [status] [limit] [offset]
+  # type: image | video (optional)
+  # status: pending | processing | completed | failed (optional)
+  local type="${1:-}"
+  local status="${2:-}"
+  local limit="${3:-20}"
+  local offset="${4:-0}"
+  local query="limit=${limit}&offset=${offset}"
+  if [[ -n "$type" ]]; then
+    query="${query}&type=${type}"
+  fi
+  if [[ -n "$status" ]]; then
+    query="${query}&status=${status}"
+  fi
+  posta_api GET "/media?${query}"
+}
+
+posta_delete_media() {
+  local media_id="$1"
+  posta_api DELETE "/media/${media_id}"
+}
+
+posta_generate_carousel_pdf() {
+  # Generate a PDF carousel from multiple images
+  # Usage: posta_generate_carousel_pdf media_ids_json [title]
+  local media_ids_json="$1"
+  local title="${2:-}"
+  local body
+  if [[ -n "$title" ]]; then
+    body=$(jq -n --argjson ids "$media_ids_json" --arg t "$title" '{media_ids: $ids, title: $t}')
+  else
+    body=$(jq -n --argjson ids "$media_ids_json" '{media_ids: $ids}')
+  fi
+  posta_api POST "/media/generate-carousel-pdf" "$body"
+}
+
+# ─── Posts Calendar ──────────────────────────────────────────────────────────
+
+posta_get_calendar() {
+  # Get calendar view of posts for a date range
+  # Usage: posta_get_calendar start_date end_date
+  # Dates in YYYY-MM-DD format
+  local start="$1"
+  local end="$2"
+  posta_api GET "/posts/calendar?start=${start}&end=${end}"
+}
+
+# ─── Platform Discovery ─────────────────────────────────────────────────────
+
+posta_list_platforms() {
+  posta_api GET "/platforms"
+}
+
+posta_get_platform_specs() {
+  # Get full specs for all platforms (char limits, media requirements, features)
+  posta_api GET "/platforms/specifications"
+}
+
+posta_get_aspect_ratios() {
+  posta_api GET "/platforms/aspect-ratios"
+}
+
+posta_get_platform() {
+  # Get detailed specs for a specific platform
+  local platform_id="$1"
+  posta_api GET "/platforms/${platform_id}"
+}
+
+posta_get_pinterest_boards() {
+  # Get Pinterest boards for a connected account
+  local account_id="$1"
+  posta_api GET "/social-accounts/${account_id}/boards"
+}
+
+# ─── Extended Analytics ──────────────────────────────────────────────────────
+
+posta_get_analytics_capabilities() {
+  posta_api GET "/analytics/capabilities"
+}
+
+posta_get_analytics_posts() {
+  # Usage: posta_get_analytics_posts [limit] [offset] [sort_by] [sort_order] [account_ids]
+  local limit="${1:-20}"
+  local offset="${2:-0}"
+  local sort_by="${3:-engagements}"
+  local sort_order="${4:-desc}"
+  local account_ids="${5:-}"
+  local query="limit=${limit}&offset=${offset}&sortBy=${sort_by}&sortOrder=${sort_order}"
+  if [[ -n "$account_ids" ]]; then
+    query="${query}&socialAccountIds=${account_ids}"
+  fi
+  posta_api GET "/analytics/posts?${query}"
+}
+
+posta_get_post_analytics() {
+  local post_id="$1"
+  posta_api GET "/analytics/posts/${post_id}"
+}
+
+posta_get_analytics_trends() {
+  # Usage: posta_get_analytics_trends [period] [metric] [account_ids]
+  # metric: impressions | engagements | engagement_rate
+  local period="${1:-30d}"
+  local metric="${2:-engagements}"
+  local account_ids="${3:-}"
+  local query="period=${period}&metric=${metric}"
+  if [[ -n "$account_ids" ]]; then
+    query="${query}&socialAccountIds=${account_ids}"
+  fi
+  posta_api GET "/analytics/trends?${query}"
+}
+
+posta_get_content_types() {
+  posta_api GET "/analytics/content-types"
+}
+
+posta_get_hashtag_analytics() {
+  posta_api GET "/analytics/hashtags"
+}
+
+posta_compare_posts() {
+  # Compare 2-4 posts side by side
+  # Usage: posta_compare_posts "id1,id2,id3"
+  local post_ids="$1"
+  posta_api GET "/analytics/compare?postIds=${post_ids}"
+}
+
+posta_export_analytics_csv() {
+  # Export analytics as CSV. Returns binary data.
+  local period="${1:-30d}"
+  posta_api GET "/analytics/export/csv?period=${period}"
+}
+
+posta_export_analytics_pdf() {
+  # Export analytics as PDF. Returns binary data.
+  local period="${1:-30d}"
+  posta_api GET "/analytics/export/pdf?period=${period}"
+}
+
+posta_get_benchmarks() {
+  posta_api GET "/analytics/benchmarks"
+}
+
+posta_refresh_post_analytics() {
+  local post_result_id="$1"
+  posta_api POST "/analytics/refresh/${post_result_id}"
+}
+
+posta_refresh_all_analytics() {
+  posta_api POST "/analytics/refresh-all"
+}
+
+# ─── User Profile ────────────────────────────────────────────────────────────
+
+posta_get_profile() {
+  posta_api GET "/users/profile"
+}
+
+posta_update_profile() {
+  local body="$1"
+  posta_api PATCH "/users/profile" "$body"
+}
+
 # ─── Multiline Caption Helper ────────────────────────────────────────────────
 
 posta_create_post_from_file() {
@@ -457,122 +683,6 @@ fireworks_validate_key() {
 
   echo "OK: Fireworks API key is valid" >&2
   return 0
-}
-
-# ─── Statapp (Stupid Correlations) ────────────────────────────────────────────
-
-statapp_login() {
-  if [[ -z "${STATAPP_BASE_URL:-}" ]]; then
-    echo "ERROR: STATAPP_URL must be set" >&2
-    return 1
-  fi
-  if [[ -z "${STATAPP_EMAIL:-}" || -z "${STATAPP_PASSWORD:-}" ]]; then
-    echo "ERROR: STATAPP_EMAIL and STATAPP_PASSWORD must be set" >&2
-    return 1
-  fi
-
-  local response
-  response=$(curl -sf -X POST "${STATAPP_BASE_URL}/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\": \"${STATAPP_EMAIL}\", \"password\": \"${STATAPP_PASSWORD}\"}")
-
-  local token
-  token=$(echo "$response" | jq -r '.token // .access_token // .idToken // empty')
-
-  if [[ -z "$token" ]]; then
-    echo "ERROR: Statapp login failed — no token in response" >&2
-    echo "$response" >&2
-    return 1
-  fi
-
-  echo "$token" > "$STATAPP_TOKEN_FILE"
-  echo "$token"
-}
-
-statapp_get_token() {
-  if [[ -f "$STATAPP_TOKEN_FILE" ]]; then
-    local token
-    token=$(cat "$STATAPP_TOKEN_FILE")
-    if [[ -n "$token" ]]; then
-      echo "$token"
-      return 0
-    fi
-  fi
-
-  statapp_login
-}
-
-statapp_api() {
-  local method="$1"
-  local endpoint="$2"
-  local body="${3:-}"
-
-  if [[ -z "${STATAPP_BASE_URL:-}" ]]; then
-    echo "ERROR: STATAPP_URL must be set" >&2
-    return 1
-  fi
-
-  local token
-  token=$(statapp_get_token)
-
-  local args=(
-    -sf
-    -X "$method"
-    -H "Authorization: Bearer ${token}"
-    -H "X-Device-Id: ${STATAPP_DEVICE_ID}"
-    -H "Content-Type: application/json"
-  )
-
-  if [[ -n "$body" ]]; then
-    args+=(-d "$body")
-  fi
-
-  local response http_code
-  response=$(curl -w "\n%{http_code}" "${args[@]}" "${STATAPP_BASE_URL}${endpoint}")
-  http_code=$(echo "$response" | tail -1)
-  response=$(echo "$response" | sed '$d')
-
-  # If 401, re-login and retry once
-  if [[ "$http_code" == "401" ]]; then
-    rm -f "$STATAPP_TOKEN_FILE"
-    token=$(statapp_login)
-    args[4]="Authorization: Bearer ${token}"
-
-    response=$(curl -w "\n%{http_code}" "${args[@]}" "${STATAPP_BASE_URL}${endpoint}")
-    http_code=$(echo "$response" | tail -1)
-    response=$(echo "$response" | sed '$d')
-  fi
-
-  if [[ "$http_code" -ge 400 ]]; then
-    echo "ERROR: Statapp API returned HTTP ${http_code}" >&2
-    echo "$response" >&2
-    return 1
-  fi
-
-  echo "$response"
-}
-
-statapp_generate_random() {
-  local aspect_ratio="${1:-square}"
-  local chart_style="${2:-classic}"
-  local include_video="${3:-false}"
-  statapp_api POST "/api/generate/random" \
-    "{\"aspectRatio\": \"${aspect_ratio}\", \"chartStyle\": \"${chart_style}\", \"includeVideo\": ${include_video}}"
-}
-
-statapp_animate() {
-  local body="$1"
-  statapp_api POST "/api/generate/animate" "$body"
-}
-
-statapp_animate_status() {
-  local job_id="$1"
-  local wait="${2:-true}"
-  statapp_api GET "/api/generate/animate/status/${job_id}?wait=${wait}"
-}
-
-statapp_get_styles() {
-  statapp_api GET "/api/generate/styles"
 }
 
 # ─── Auto-discover credentials on source ────────────────────────────────────

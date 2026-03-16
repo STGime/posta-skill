@@ -1,13 +1,26 @@
 ---
 name: posta
-description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, or manage social accounts through Posta. Also activates for "Stupid Correlations" content generation via statapp.
+description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, compare post performance, export analytics, discover platform specs and capabilities, manage media library, view content calendar, or manage social accounts through Posta.
+license: MIT
+metadata:
+  author: Posta
+  version: 1.1.0
+  tags:
+    - social-media
+    - scheduling
+    - analytics
+    - content-generation
+    - instagram
+    - tiktok
+    - twitter
+    - linkedin
 ---
 
 # Posta — Social Media Content & Scheduling
 
 Posta is a social media management platform that lets you create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky.
 
-This skill enables you to interact with the Posta API to manage social media content end-to-end: authenticate, list accounts, upload media, create/schedule/publish posts, generate AI content, create Stupid Correlations videos, and view analytics.
+This skill enables you to interact with the Posta API to manage social media content end-to-end: authenticate, list accounts, upload media, create/schedule/publish posts, generate AI content, and view analytics.
 
 ## Setup
 
@@ -21,9 +34,6 @@ If `POSTA_API_TOKEN` is set, email/password are not needed and the login flow is
 ### Optional Environment Variables
 
 - `POSTA_BASE_URL` — API base URL (default: `https://api.getposta.app/v1`)
-- `STATAPP_URL` — Stupid Correlations API base URL (for correlation content)
-- `STATAPP_EMAIL` — Statapp account email (required for statapp access)
-- `STATAPP_PASSWORD` — Statapp account password (required for statapp access)
 - `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation). Keys start with `fw_`. Get one at https://fireworks.ai/account/api-keys. The skill auto-discovers this from env vars, `.env.development`, `~/.zshrc`, `~/.bashrc`, or `~/.posta/credentials`.
 - `GEMINI_API_KEY` — Google Gemini API key (for caption/text generation)
 - `OPENAI_API_KEY` — OpenAI API key (alternative text generation)
@@ -43,17 +53,21 @@ If a `POSTA_API_TOKEN` is found during discovery, the skill uses it immediately 
 Source the bash helper for all API interactions:
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 ```
 
 This provides:
-- **Posta:** `posta_login`, `posta_api`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_accounts`, `posta_list_posts`, `posta_create_post`, `posta_create_post_from_file`, `posta_get_post`, `posta_update_post`, `posta_delete_post`, `posta_cancel_post`, `posta_schedule_post`, `posta_publish_post`, `posta_get_media`, `posta_get_analytics_overview`, `posta_get_best_times`, `posta_get_plan`, `posta_discover_credentials`, `fireworks_validate_key`
-- **Statapp:** `statapp_login`, `statapp_api`, `statapp_generate_random`, `statapp_animate`, `statapp_animate_status`, `statapp_get_styles`
+- **Auth & Core:** `posta_login`, `posta_get_token`, `posta_api`, `posta_discover_credentials`
+- **Media:** `posta_detect_mime`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_media`, `posta_get_media`, `posta_delete_media`, `posta_generate_carousel_pdf`
+- **Posts:** `posta_list_posts`, `posta_create_post`, `posta_create_post_from_file`, `posta_get_post`, `posta_update_post`, `posta_delete_post`, `posta_schedule_post`, `posta_publish_post`, `posta_cancel_post`, `posta_get_calendar`
+- **Platform Discovery:** `posta_list_platforms`, `posta_get_platform_specs`, `posta_get_aspect_ratios`, `posta_get_platform`, `posta_get_pinterest_boards`
+- **Analytics:** `posta_get_analytics_overview`, `posta_get_analytics_capabilities`, `posta_get_analytics_posts`, `posta_get_post_analytics`, `posta_get_analytics_trends`, `posta_get_best_times`, `posta_get_content_types`, `posta_get_hashtag_analytics`, `posta_compare_posts`, `posta_get_benchmarks`, `posta_export_analytics_csv`, `posta_export_analytics_pdf`, `posta_refresh_post_analytics`, `posta_refresh_all_analytics`
+- **User:** `posta_get_plan`, `posta_get_profile`, `posta_update_profile`
+- **Fireworks:** `fireworks_validate_key`
 
 ### Reference Docs
 
 - [Posta API Reference](references/posta-api-reference.md) — Full REST API documentation
-- [Statapp API Reference](references/statapp-api-reference.md) — Stupid Correlations endpoints
 - [Content Generation Patterns](references/content-generation.md) — Fireworks/Gemini/OpenAI usage
 - [Workflow Examples](examples/workflows.md) — Full example conversations
 
@@ -68,7 +82,7 @@ Authentication is automatic. If `POSTA_API_TOKEN` is set, the skill uses it dire
 - **JWT**: re-authenticates and retries once
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 # Token is fetched/cached automatically on first API call
 ```
 
@@ -91,16 +105,27 @@ Display as a table showing: Platform, Username, Active status, Last used.
 
 ### 3. Upload Media
 
-The upload flow has 3 steps: create signed URL → PUT binary → confirm upload.
+The upload flow has 3 steps: create signed URL → PUT binary → confirm upload. MIME type is auto-detected from the file — no need to specify it manually.
 
-**From a local file:**
+**From a local file (auto-detect MIME):**
+```bash
+MEDIA_ID=$(posta_upload_media "/path/to/file.jpg")
+```
+
+**From a local file (explicit MIME):**
 ```bash
 MEDIA_ID=$(posta_upload_media "/path/to/file.jpg" "image/jpeg")
 ```
 
-**From a URL (e.g., generated image):**
+**From a URL (auto-detect from extension):**
 ```bash
-MEDIA_ID=$(posta_upload_from_url "https://example.com/image.png" "image/png")
+MEDIA_ID=$(posta_upload_from_url "https://example.com/image.png")
+```
+
+**Detect MIME type separately:**
+```bash
+MIME=$(posta_detect_mime "/path/to/file.mp4")
+# Returns: video/mp4
 ```
 
 **Supported formats:**
@@ -109,7 +134,24 @@ MEDIA_ID=$(posta_upload_from_url "https://example.com/image.png" "image/png")
 
 After upload, the media enters `processing` status. For images this is fast (thumbnails/variants). For videos it takes longer. Check status with:
 ```bash
-posta_api GET "/media/${MEDIA_ID}"
+posta_get_media "$MEDIA_ID"
+```
+
+**List media library:**
+```bash
+ALL_MEDIA=$(posta_list_media)
+IMAGES_ONLY=$(posta_list_media "image")
+COMPLETED=$(posta_list_media "" "completed" 50)
+```
+
+**Delete media:**
+```bash
+posta_delete_media "$MEDIA_ID"
+```
+
+**Generate carousel PDF from images:**
+```bash
+RESULT=$(posta_generate_carousel_pdf '["media-id-1", "media-id-2", "media-id-3"]' "My Carousel Title")
 ```
 
 ### 4. Create, Schedule & Publish Posts
@@ -208,56 +250,7 @@ CAPTION=$(curl -s -X POST \
 
 See [content-generation.md](references/content-generation.md) for full patterns including OpenAI and hashtag generation.
 
-### 6. Generate Stupid Correlations
-
-Generate viral correlation content (chart + AI image + optional video):
-
-**Image only (fast):**
-```bash
-RESULT=$(statapp_generate_random "square" "classic" false)
-
-IMAGE_URL=$(echo "$RESULT" | jq -r '.image.url')
-HEADLINE=$(echo "$RESULT" | jq -r '.caption.headline')
-CAPTION=$(echo "$RESULT" | jq -r '.caption.caption')
-```
-
-**With video (slower but great for TikTok/Reels):**
-```bash
-RESULT=$(statapp_generate_random "portrait" "neon" true)
-
-VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url')
-```
-
-**Async video (for separate video generation):**
-```bash
-# 1. Generate image first
-RESULT=$(statapp_generate_random "portrait" "classic" false)
-
-# 2. Queue video job
-JOB=$(statapp_animate '{
-  "datasetAId": "'"$(echo "$RESULT" | jq -r '.correlation.datasetA.id')"'",
-  "datasetBId": "'"$(echo "$RESULT" | jq -r '.correlation.datasetB.id')"'",
-  "backgroundUrl": "'"$(echo "$RESULT" | jq -r '.background.url')"'",
-  "caption": '"$(echo "$RESULT" | jq '.caption')"',
-  "aspectRatio": "portrait",
-  "chartStyle": "neon"
-}')
-
-JOB_ID=$(echo "$JOB" | jq -r '.jobId')
-
-# 3. Wait for completion (long-poll)
-VIDEO_RESULT=$(statapp_animate_status "$JOB_ID" true)
-
-VIDEO_URL=$(echo "$VIDEO_RESULT" | jq -r '.video.url')
-```
-
-Aspect ratios: `square` (1024x1024, Instagram), `portrait` (768x1344, TikTok/Reels), `landscape` (1344x768, LinkedIn/X).
-
-Chart styles: `classic`, `neon`, `minimal`.
-
-See [statapp-api-reference.md](references/statapp-api-reference.md) for full API docs.
-
-### 7. View Analytics
+### 6. View Analytics
 
 **Overview stats:**
 ```bash
@@ -284,6 +277,99 @@ TRENDS=$(posta_api GET "/analytics/trends?period=30d&metric=engagements")
 ```bash
 PLAN=$(posta_get_plan)
 echo "$PLAN" | jq '{plan, usage, limits}'
+```
+
+### 7. Platform Discovery
+
+Query platform capabilities, character limits, media requirements, and supported features before creating posts.
+
+**List all supported platforms:**
+```bash
+posta_list_platforms
+```
+
+**Get full specs (char limits, media requirements, features):**
+```bash
+SPECS=$(posta_get_platform_specs)
+```
+
+**Get specs for a specific platform:**
+```bash
+posta_get_platform "instagram"
+```
+
+**Get aspect ratio reference:**
+```bash
+posta_get_aspect_ratios
+```
+
+**Get Pinterest boards for a connected account:**
+```bash
+BOARDS=$(posta_get_pinterest_boards "$ACCOUNT_ID")
+```
+
+Use platform discovery to validate content before posting — check character limits, required media dimensions, and supported post types.
+
+### 8. Calendar View
+
+View scheduled and posted content on a calendar:
+```bash
+CALENDAR=$(posta_get_calendar "2026-03-01" "2026-03-31")
+echo "$CALENDAR" | jq '.items[] | {id, caption: .caption[:50], status, scheduledAt}'
+```
+
+### 9. Extended Analytics
+
+**Analytics capabilities (what your plan supports):**
+```bash
+posta_get_analytics_capabilities
+```
+
+**Top performing posts (sorted, paginated):**
+```bash
+TOP=$(posta_get_analytics_posts 10 0 "engagements" "desc")
+```
+
+**Single post analytics:**
+```bash
+posta_get_post_analytics "$POST_ID"
+```
+
+**Trends over time with custom period:**
+```bash
+TRENDS=$(posta_get_analytics_trends "90d" "engagement_rate")
+```
+
+**Content type performance breakdown:**
+```bash
+posta_get_content_types
+```
+
+**Hashtag performance (pro plan):**
+```bash
+posta_get_hashtag_analytics
+```
+
+**Compare posts side by side (2-4 posts, pro plan):**
+```bash
+posta_compare_posts "post-id-1,post-id-2,post-id-3"
+```
+
+**Engagement benchmarks (pro plan):**
+```bash
+posta_get_benchmarks
+```
+
+**Export analytics:**
+```bash
+posta_export_analytics_csv "30d"
+posta_export_analytics_pdf "90d"
+```
+
+**Refresh analytics:**
+```bash
+posta_refresh_post_analytics "$POST_RESULT_ID"
+posta_refresh_all_analytics  # Rate limited: 1 per hour
 ```
 
 ---
@@ -313,3 +399,7 @@ echo "$PLAN" | jq '{plan, usage, limits}'
 11. **Always generate hashtags for posts.** When creating a post, always include relevant hashtags in the `hashtags` array. Generate 5–10 hashtags based on the caption content, target platform, and topic. Mix broad reach tags (e.g. #AI, #Marketing) with niche tags (e.g. #LaborMarket, #FutureOfWork). Do not wait for the user to ask — hashtags should be included by default on every post.
 
 12. **Use `/tmp/.posta_last_response` for captured output.** When capturing `posta_api` output in a variable with `$()`, avoid using `echo` to re-output it — macOS echo corrupts `\n` in JSON strings. Instead pipe directly (`posta_api ... | jq`) or read from the file (`jq ... /tmp/.posta_last_response`).
+
+13. **Use platform discovery for validation.** Before creating posts for unfamiliar platforms, call `posta_get_platform_specs` or `posta_get_platform "<platform>"` to check character limits, required media dimensions, and supported features. This prevents failed posts due to platform constraints.
+
+14. **Auto MIME detection for uploads.** When uploading media, you can omit the MIME type parameter — `posta_upload_media` and `posta_upload_from_url` auto-detect it from the file content or extension. Only specify MIME type manually when the auto-detection might be wrong (e.g., `.bin` files).
