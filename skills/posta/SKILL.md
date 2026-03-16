@@ -1,6 +1,6 @@
 ---
 name: posta
-description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, compare post performance, export analytics, discover platform specs and capabilities, manage media library, view content calendar, or manage social accounts through Posta.
+description: Post to Instagram, TikTok, LinkedIn, YouTube, X/Twitter, Facebook, Pinterest, Threads and Bluesky from your terminal. Create posts with AI-generated images and captions, upload media, schedule or publish instantly, view analytics, and manage all your social accounts — without leaving your editor. Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, compare post performance, or manage social accounts through Posta.
 license: MIT
 homepage: https://github.com/STGime/posta-skill
 metadata:
