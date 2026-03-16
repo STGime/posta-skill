@@ -5,7 +5,7 @@ license: MIT
 homepage: https://github.com/STGime/posta-skill
 metadata:
   author: Posta
-  version: 1.2.0
+  version: 1.2.1
   tags:
     - social-media
     - scheduling
@@ -49,13 +49,14 @@ If `POSTA_API_TOKEN` is set, email/password are not needed and the login flow is
 
 ### Credentials Auto-Discovery
 
-The skill automatically discovers credentials from multiple locations (in order):
-1. Already-set environment variables
-2. `~/.posta/credentials` (dedicated config file — checked first for `POSTA_API_TOKEN`)
-3. `~/.zshrc` and `~/.bashrc` (grep for exports)
-4. `.env`, `.env.local`, `.env.production` in the current working directory
+The skill searches a fixed list of files for `POSTA_API_TOKEN` (or legacy `POSTA_EMAIL`/`POSTA_PASSWORD`). Only exact variable names are matched — no other file content is read. Search order:
 
-If a `POSTA_API_TOKEN` is found during discovery, the skill uses it immediately and skips email/password lookup.
+1. Already-set environment variables (no file access)
+2. `~/.posta/credentials` — dedicated Posta config file (preferred)
+3. `~/.zshrc` and `~/.bashrc` — standard shell profiles
+4. `.env`, `.env.local`, `.env.production` in the working directory
+
+If `POSTA_API_TOKEN` is found, the skill uses it immediately and skips email/password lookup. See `SECURITY.md` in the repo root for full details.
 
 ### Helper Script
 

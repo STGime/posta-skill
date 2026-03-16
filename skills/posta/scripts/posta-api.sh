@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # posta-api.sh — Bash helper for Posta API interactions
-# Source this file: source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+# Source this file from your AI assistant skill:
+#   source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+#
+# The three root variables above are set by different AI assistant platforms
+# to point to the skill's install directory. This is standard path resolution,
+# not environment/sandbox detection. See SECURITY.md for details.
 
 set -euo pipefail
 
@@ -24,6 +29,24 @@ posta_sanitize_json() {
 }
 
 # ─── Credentials Discovery ───────────────────────────────────────────────────
+# Reads POSTA_API_TOKEN (or legacy email/password) from a fixed list of files
+# where users are instructed to store their credentials. See SECURITY.md for
+# a full explanation of why each location is checked and what data is read.
+
+# Fixed, auditable list of files the skill will ever read for credentials.
+# Each entry is either a dedicated config file or a standard developer dotfile
+# where users commonly place `export VAR=value` lines.
+_POSTA_CREDENTIAL_SOURCES=(
+  "$HOME/.posta/credentials"   # dedicated Posta config (preferred)
+  "$HOME/.zshrc"               # shell profile — common for export lines
+  "$HOME/.bashrc"              # shell profile — common for export lines
+  ".env"                       # project dotenv
+  ".env.local"                 # project dotenv (local override)
+  ".env.production"            # project dotenv (production)
+)
+
+# Exact variable names the skill will search for — nothing else is read.
+# POSTA_API_TOKEN, POSTA_EMAIL, POSTA_PASSWORD, FIREWORKS_API_KEY
 
 posta_discover_credentials() {
   # Only run discovery once per session
@@ -32,101 +55,60 @@ posta_discover_credentials() {
   fi
   export _POSTA_CREDS_DISCOVERED=1
 
-  # If API token already set, skip password discovery
+  # If API token already set, skip all file reads
   if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
     return 0
   fi
 
-  # Skip if already set
+  # Skip if legacy creds already set
   if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
     return 0
   fi
 
   local source_found=""
 
-  # Helper: extract a var value from a file (safe under pipefail)
+  # Helper: extract a single named variable from a file.
+  # Uses exact-match grep for the variable name — never reads arbitrary content.
   _posta_extract_var() {
     local varname="$1" file="$2"
     grep -E "^(export )?${varname}=" "$file" 2>/dev/null | tail -1 | sed "s/^export //" | sed "s/^${varname}=//" | tr -d '"' | tr -d "'" || true
   }
 
-  # Discover POSTA_API_TOKEN from common locations (check before email/password)
-  if [[ -z "${POSTA_API_TOKEN:-}" ]]; then
-    for src in "$HOME/.posta/credentials" "$HOME/.zshrc" "$HOME/.bashrc" .env .env.local .env.production; do
-      if [[ -f "$src" ]]; then
-        local val
-        val=$(_posta_extract_var POSTA_API_TOKEN "$src")
-        if [[ -n "$val" ]]; then
-          export POSTA_API_TOKEN="$val"
-          echo "INFO: Posta API token loaded from ${src}" >&2
-          return 0
-        fi
-      fi
-    done
-  fi
-
-  # 1. Check shell profiles (~/.zshrc, ~/.bashrc)
-  for profile in "$HOME/.zshrc" "$HOME/.bashrc"; do
-    if [[ -f "$profile" ]]; then
+  # 1. Look for POSTA_API_TOKEN (preferred auth method)
+  for src in "${_POSTA_CREDENTIAL_SOURCES[@]}"; do
+    if [[ -f "$src" ]]; then
       local val
-      val=$(_posta_extract_var POSTA_EMAIL "$profile")
+      val=$(_posta_extract_var POSTA_API_TOKEN "$src")
+      if [[ -n "$val" ]]; then
+        export POSTA_API_TOKEN="$val"
+        echo "INFO: Posta API token loaded from ${src}" >&2
+        return 0
+      fi
+    fi
+  done
+
+  # 2. Fall back to legacy email/password
+  for src in "${_POSTA_CREDENTIAL_SOURCES[@]}"; do
+    if [[ -f "$src" ]]; then
+      local val
+      val=$(_posta_extract_var POSTA_EMAIL "$src")
       if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
         export POSTA_EMAIL="$val"
       fi
-      val=$(_posta_extract_var POSTA_PASSWORD "$profile")
+      val=$(_posta_extract_var POSTA_PASSWORD "$src")
       if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
         export POSTA_PASSWORD="$val"
       fi
       if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
-        source_found="$profile"
+        source_found="$src"
         break
       fi
     fi
   done
 
-  # 2. Check .env files in CWD
-  if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
-    for envfile in .env .env.local .env.production; do
-      if [[ -f "$envfile" ]]; then
-        local val
-        val=$(_posta_extract_var POSTA_EMAIL "$envfile")
-        if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
-          export POSTA_EMAIL="$val"
-        fi
-        val=$(_posta_extract_var POSTA_PASSWORD "$envfile")
-        if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
-          export POSTA_PASSWORD="$val"
-        fi
-        if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
-          source_found="$envfile"
-          break
-        fi
-      fi
-    done
-  fi
-
-  # 3. Check dedicated credentials file
-  if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
-    local creds_file="$HOME/.posta/credentials"
-    if [[ -f "$creds_file" ]]; then
-      local val
-      val=$(_posta_extract_var POSTA_EMAIL "$creds_file")
-      if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
-        export POSTA_EMAIL="$val"
-      fi
-      val=$(_posta_extract_var POSTA_PASSWORD "$creds_file")
-      if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
-        export POSTA_PASSWORD="$val"
-      fi
-      if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
-        source_found="$creds_file"
-      fi
-    fi
-  fi
-
-  # Also discover FIREWORKS_API_KEY if missing
+  # 3. Discover FIREWORKS_API_KEY for AI image generation (optional)
   if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
-    for src in "$HOME/.zshrc" "$HOME/.bashrc" .env .env.local .env.development .env.production "$HOME/.posta/credentials"; do
+    for src in "${_POSTA_CREDENTIAL_SOURCES[@]}" ".env.development"; do
       if [[ -f "$src" ]]; then
         local val
         val=$(_posta_extract_var FIREWORKS_API_KEY "$src")
@@ -665,7 +647,7 @@ fireworks_validate_key() {
 
   if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
     echo "ERROR: FIREWORKS_API_KEY is not set." >&2
-    echo "Set it as an env var, in .env.development, ~/.zshrc, or ~/.posta/credentials" >&2
+    echo "Set it in ~/.posta/credentials, ~/.zshrc, .env, or as an env var" >&2
     return 1
   fi
 

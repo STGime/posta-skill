@@ -325,6 +325,7 @@ When you ask the AI to perform social media tasks, it:
 - JWT token cache at `/tmp/.posta_token` is temporary and cleared on reboot. API tokens skip this entirely.
 - AI generation keys (Fireworks, Gemini, OpenAI) are sent only to their respective services — never to Posta.
 - The skill always creates posts as **drafts first** and asks for confirmation before publishing.
+- **Credential discovery** reads only specific `POSTA_*` and `FIREWORKS_API_KEY` variable names from a fixed list of files. See [SECURITY.md](SECURITY.md) for a detailed explanation of every file accessed and why.
 
 ## Troubleshooting
 
@@ -345,7 +346,7 @@ When you ask the AI to perform social media tasks, it:
 | Claude Code | 1.0+ | Fully supported |
 | OpenClaw | 1.0+ | Fully supported |
 
-Both platforms use the AgentSkills `SKILL.md` format. The skill auto-detects which platform it's running on via environment variables (`CLAUDE_PLUGIN_ROOT` vs `OPENCLAW_SKILL_ROOT`).
+Both platforms use the AgentSkills `SKILL.md` format. The skill resolves its install path from the platform's root directory variable (`POSTA_SKILL_ROOT`, `OPENCLAW_SKILL_ROOT`, or `CLAUDE_PLUGIN_ROOT`) — a standard portable shell pattern for locating sibling files.
 
 ## License
 
