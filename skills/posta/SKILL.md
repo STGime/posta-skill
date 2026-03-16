@@ -2,6 +2,7 @@
 name: posta
 description: Use this skill when the user wants to create social media content, generate images/videos/text with AI, upload media, create posts, schedule or publish posts, view analytics, compare post performance, export analytics, discover platform specs and capabilities, manage media library, view content calendar, or manage social accounts through Posta.
 license: MIT
+homepage: https://github.com/STGime/posta-skill
 metadata:
   author: Posta
   version: 1.1.0
@@ -14,6 +15,14 @@ metadata:
     - tiktok
     - twitter
     - linkedin
+  clawdbot:
+    requires:
+      env:
+        - POSTA_API_TOKEN
+      bins:
+        - curl
+        - jq
+    primaryEnv: POSTA_API_TOKEN
 ---
 
 # Posta — Social Media Content & Scheduling
