@@ -67,7 +67,7 @@ source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/ski
 
 This provides:
 - **Auth & Core:** `posta_login`, `posta_get_token`, `posta_api`, `posta_discover_credentials`
-- **Media:** `posta_detect_mime`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_media`, `posta_get_media`, `posta_delete_media`, `posta_generate_carousel_pdf`
+- **Media:** `posta_detect_mime`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_media`, `posta_get_media`, `posta_delete_media`, `posta_generate_carousel_pdf`, `posta_generate_text_carousel_pdf`
 - **Posts:** `posta_list_posts`, `posta_create_post`, `posta_create_post_from_file`, `posta_get_post`, `posta_update_post`, `posta_delete_post`, `posta_schedule_post`, `posta_publish_post`, `posta_cancel_post`, `posta_get_calendar`
 - **Platform Discovery:** `posta_list_platforms`, `posta_get_platform_specs`, `posta_get_aspect_ratios`, `posta_get_platform`, `posta_get_pinterest_boards`
 - **Analytics:** `posta_get_analytics_overview`, `posta_get_analytics_capabilities`, `posta_get_analytics_posts`, `posta_get_post_analytics`, `posta_get_analytics_trends`, `posta_get_best_times`, `posta_get_content_types`, `posta_get_hashtag_analytics`, `posta_compare_posts`, `posta_get_benchmarks`, `posta_export_analytics_csv`, `posta_export_analytics_pdf`, `posta_refresh_post_analytics`, `posta_refresh_all_analytics`
@@ -161,6 +161,17 @@ posta_delete_media "$MEDIA_ID"
 **Generate carousel PDF from images:**
 ```bash
 RESULT=$(posta_generate_carousel_pdf '["media-id-1", "media-id-2", "media-id-3"]' "My Carousel Title")
+```
+
+**Generate carousel PDF with text over background images** (e.g. AI-generated backgrounds → LinkedIn document post):
+```bash
+# Each slide composites title + body over an uploaded background image (2-20 slides).
+RESULT=$(posta_generate_text_carousel_pdf '[
+  {"media_id":"bg-id-1","title":"Hook","body":"Opening line"},
+  {"media_id":"bg-id-2","title":"Point","body":"Supporting detail"},
+  {"media_id":"bg-id-3","title":"CTA","body":"Start free at getposta.app"}
+]' "5-day launch")
+# RESULT.media_id is a document (PDF) — attach it to a post via posta_create_post.
 ```
 
 ### 4. Create, Schedule & Publish Posts

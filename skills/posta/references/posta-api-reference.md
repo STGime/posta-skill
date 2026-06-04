@@ -155,11 +155,20 @@ Upload binary file directly to the signed URL (not through Posta API).
 **Auth required.** Soft-delete a media item. **Response 204.**
 
 ### POST `/media/generate-carousel-pdf`
-**Auth required.** Generate a PDF carousel from multiple images.
+**Auth required.** Generate a PDF carousel from multiple images (one image per page).
 
 **Body:** `{ "media_ids": ["uuid", ...], "title": "optional string" }`
 
 **Response 201:** `{ "media_id", "thumbnail_url", "original_url", "page_count" }`
+
+### POST `/media/generate-text-carousel-pdf`
+**Auth required.** Generate a PDF carousel where each page is slide text (title + body)
+composited over a background image — e.g. AI-generated backgrounds → a LinkedIn document post.
+
+**Body:** `{ "slides": [ { "media_id": "uuid", "title": "string", "body": "string" }, ... ], "title": "optional string" }`
+- 2–20 slides; each slide needs a `title` or `body`. `media_id` is an uploaded **image** you own (the background).
+
+**Response 201:** `{ "media_id", "thumbnail_url", "original_url", "page_count" }` — `media_id` is a `document` (PDF) media item to attach to a post.
 
 ---
 

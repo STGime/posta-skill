@@ -409,7 +409,70 @@ posta_list_posts() {
 
 posta_create_post() {
   local body="$1"
+  # Auto-inject required platform defaults (e.g., TikTok privacyLevel)
+  body=$(posta_inject_platform_defaults "$body")
   posta_api POST "/posts" "$body"
+}
+
+posta_inject_platform_defaults() {
+  # Ensures required platform configuration fields are present.
+  # - TikTok requires privacyLevel — publishing fails without it.
+  # - Pinterest requires board_id — publishing fails with MISSING_BOARD_ID.
+  # This function inspects socialAccountIds against account data
+  # and injects defaults or warns when required fields are missing.
+  local body="$1"
+
+  # Get the account IDs from the post body
+  local account_ids
+  account_ids=$(echo "$body" | jq -r '.socialAccountIds // [] | .[]' 2>/dev/null)
+  if [[ -z "$account_ids" ]]; then
+    echo "$body"
+    return 0
+  fi
+
+  # Fetch accounts to resolve platform types
+  local accounts
+  accounts=$(posta_list_accounts 2>/dev/null) || true
+  if [[ -z "$accounts" ]]; then
+    echo "$body"
+    return 0
+  fi
+
+  # Identify which platforms are targeted
+  local has_tiktok=false
+  local has_pinterest=false
+  for aid in $account_ids; do
+    local platform
+    platform=$(echo "$accounts" | jq -r --arg id "$aid" '.[] | select(.id == ($id | tonumber)) | .platform' 2>/dev/null) || true
+    case "$platform" in
+      tiktok)    has_tiktok=true ;;
+      pinterest) has_pinterest=true ;;
+    esac
+  done
+
+  # TikTok: inject privacyLevel if missing
+  if [[ "$has_tiktok" == "true" ]]; then
+    local has_tiktok_privacy
+    has_tiktok_privacy=$(echo "$body" | jq -r '.platformConfigurations.tiktok.privacyLevel // empty' 2>/dev/null)
+    if [[ -z "$has_tiktok_privacy" ]]; then
+      body=$(echo "$body" | jq '.platformConfigurations = ((.platformConfigurations // {}) * {
+        tiktok: ((.platformConfigurations.tiktok // {}) + {privacyLevel: "PUBLIC_TO_EVERYONE"})
+      })')
+      echo "INFO: Auto-injected TikTok privacyLevel=PUBLIC_TO_EVERYONE (required by TikTok API)" >&2
+    fi
+  fi
+
+  # Pinterest: warn if board_id is missing (cannot auto-select — user must choose)
+  if [[ "$has_pinterest" == "true" ]]; then
+    local has_board_id
+    has_board_id=$(echo "$body" | jq -r '.platformConfigurations.pinterest.boardId // .platformConfigurations.pinterest.board_id // empty' 2>/dev/null)
+    if [[ -z "$has_board_id" ]]; then
+      echo "WARNING: Pinterest requires a board_id but none was provided. Publishing will fail with MISSING_BOARD_ID." >&2
+      echo "Use posta_get_pinterest_boards \"\$ACCOUNT_ID\" to list available boards." >&2
+    fi
+  fi
+
+  echo "$body"
 }
 
 posta_schedule_post() {
@@ -499,6 +562,22 @@ posta_generate_carousel_pdf() {
     body=$(jq -n --argjson ids "$media_ids_json" '{media_ids: $ids}')
   fi
   posta_api POST "/media/generate-carousel-pdf" "$body"
+}
+
+posta_generate_text_carousel_pdf() {
+  # Generate a PDF carousel with text composited over background images.
+  # Usage: posta_generate_text_carousel_pdf slides_json [title]
+  #   slides_json: '[{"media_id":"uuid","title":"...","body":"..."}, ...]' (2-20 slides;
+  #   each slide needs a title or body; backgrounds are uploaded image media IDs)
+  local slides_json="$1"
+  local title="${2:-}"
+  local body
+  if [[ -n "$title" ]]; then
+    body=$(jq -n --argjson s "$slides_json" --arg t "$title" '{slides: $s, title: $t}')
+  else
+    body=$(jq -n --argjson s "$slides_json" '{slides: $s}')
+  fi
+  posta_api POST "/media/generate-text-carousel-pdf" "$body"
 }
 
 # ─── Posts Calendar ──────────────────────────────────────────────────────────
@@ -632,11 +711,13 @@ posta_update_profile() {
 
 posta_create_post_from_file() {
   # Creates a post using a caption from a file — handles multiline text safely
+  # Usage: posta_create_post_from_file caption_file [media_ids_json] account_ids_json [is_draft] [hashtags_json] [platform_configs_json]
   local caption_file="$1"
   local media_ids_json="${2:-[]}"
   local account_ids_json="$3"
   local is_draft="${4:-true}"
   local hashtags_json="${5:-[]}"
+  local platform_configs_json="${6:-{}}"
 
   local payload
   payload=$(jq -n \
@@ -645,7 +726,11 @@ posta_create_post_from_file() {
     --argjson accountIds "$account_ids_json" \
     --argjson isDraft "$is_draft" \
     --argjson hashtags "$hashtags_json" \
-    '{caption: $caption, mediaIds: $mediaIds, socialAccountIds: $accountIds, isDraft: $isDraft, hashtags: $hashtags}')
+    --argjson platformConfigs "$platform_configs_json" \
+    '{caption: $caption, mediaIds: $mediaIds, socialAccountIds: $accountIds, isDraft: $isDraft, hashtags: $hashtags, platformConfigurations: $platformConfigs}')
+
+  # Auto-inject required platform defaults (e.g., TikTok privacyLevel)
+  payload=$(posta_inject_platform_defaults "$payload")
 
   posta_api POST "/posts" "$payload"
 }
