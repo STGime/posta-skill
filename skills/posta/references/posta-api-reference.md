@@ -162,7 +162,8 @@ Upload binary file directly to the signed URL (not through Posta API).
 **Response 201:** `{ "media_id", "thumbnail_url", "original_url", "page_count" }`
 
 ### POST `/media/generate-text-carousel-pdf`
-**Auth required.** Generate a PDF carousel where each page is slide text (title + body)
+**Auth required. Professional plan only** (other plans get `403 PLAN_LIMIT_EXCEEDED`).
+Generate a PDF carousel where each page is slide text (title + body)
 composited over a background image — e.g. AI-generated backgrounds → a LinkedIn document post.
 
 **Body:** `{ "slides": [ { "media_id": "uuid", "title": "string", "body": "string" }, ... ], "title": "optional string", "logo_media_id": "optional uuid" }`
