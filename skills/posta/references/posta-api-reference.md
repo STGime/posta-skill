@@ -165,8 +165,9 @@ Upload binary file directly to the signed URL (not through Posta API).
 **Auth required.** Generate a PDF carousel where each page is slide text (title + body)
 composited over a background image — e.g. AI-generated backgrounds → a LinkedIn document post.
 
-**Body:** `{ "slides": [ { "media_id": "uuid", "title": "string", "body": "string" }, ... ], "title": "optional string" }`
+**Body:** `{ "slides": [ { "media_id": "uuid", "title": "string", "body": "string" }, ... ], "title": "optional string", "logo_media_id": "optional uuid" }`
 - 2–20 slides; each slide needs a `title` or `body`. `media_id` is an uploaded **image** you own (the background).
+- `logo_media_id` (optional): an uploaded **image** you own, rendered in the bottom-right corner of every slide.
 
 **Response 201:** `{ "media_id", "thumbnail_url", "original_url", "page_count" }` — `media_id` is a `document` (PDF) media item to attach to a post.
 

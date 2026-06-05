@@ -566,16 +566,20 @@ posta_generate_carousel_pdf() {
 
 posta_generate_text_carousel_pdf() {
   # Generate a PDF carousel with text composited over background images.
-  # Usage: posta_generate_text_carousel_pdf slides_json [title]
+  # Usage: posta_generate_text_carousel_pdf slides_json [title] [logo_media_id]
   #   slides_json: '[{"media_id":"uuid","title":"...","body":"..."}, ...]' (2-20 slides;
   #   each slide needs a title or body; backgrounds are uploaded image media IDs)
+  #   logo_media_id: optional uploaded image media ID shown bottom-right of every slide
   local slides_json="$1"
   local title="${2:-}"
+  local logo_media_id="${3:-}"
   local body
+  body=$(jq -n --argjson s "$slides_json" '{slides: $s}')
   if [[ -n "$title" ]]; then
-    body=$(jq -n --argjson s "$slides_json" --arg t "$title" '{slides: $s, title: $t}')
-  else
-    body=$(jq -n --argjson s "$slides_json" '{slides: $s}')
+    body=$(echo "$body" | jq --arg t "$title" '. + {title: $t}')
+  fi
+  if [[ -n "$logo_media_id" ]]; then
+    body=$(echo "$body" | jq --arg l "$logo_media_id" '. + {logo_media_id: $l}')
   fi
   posta_api POST "/media/generate-text-carousel-pdf" "$body"
 }

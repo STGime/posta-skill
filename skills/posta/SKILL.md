@@ -166,11 +166,12 @@ RESULT=$(posta_generate_carousel_pdf '["media-id-1", "media-id-2", "media-id-3"]
 **Generate carousel PDF with text over background images** (e.g. AI-generated backgrounds → LinkedIn document post):
 ```bash
 # Each slide composites title + body over an uploaded background image (2-20 slides).
+# Optional 3rd arg: a logo media ID shown bottom-right of every slide.
 RESULT=$(posta_generate_text_carousel_pdf '[
   {"media_id":"bg-id-1","title":"Hook","body":"Opening line"},
   {"media_id":"bg-id-2","title":"Point","body":"Supporting detail"},
   {"media_id":"bg-id-3","title":"CTA","body":"Start free at getposta.app"}
-]' "5-day launch")
+]' "5-day launch" "logo-media-id")
 # RESULT.media_id is a document (PDF) — attach it to a post via posta_create_post.
 ```
 

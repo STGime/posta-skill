@@ -270,11 +270,12 @@ echo "$CAROUSEL" | jq '{media_id, page_count}'
 
 # Generate a carousel PDF with text over background images (LinkedIn document post)
 # Upload background images first (e.g. AI-generated), then composite slide text on top.
+# Optional 3rd arg: a logo media ID shown bottom-right of every slide (upload it first).
 DECK=$(posta_generate_text_carousel_pdf '[
   {"media_id":"bg1","title":"Turn any article into a carousel","body":"AI writes the slides."},
   {"media_id":"bg2","title":"On-brand copy","body":"One slide at a time."},
   {"media_id":"bg3","title":"Create once. Post everywhere.","body":"Start free at getposta.app"}
-]' "Launch deck")
+]' "Launch deck" "$LOGO_ID")
 PDF_ID=$(echo "$DECK" | jq -r '.media_id')
 # Attach the generated PDF to a LinkedIn post
 posta_create_post "$(jq -n --arg m "$PDF_ID" '{caption:"New on the blog 👇", socialAccountIds:[123], mediaIds:[$m]}')"
