@@ -6,8 +6,7 @@ A Claude Code plugin that enables social media content generation, scheduling, a
 
 - **Post Management** — Create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitter, LinkedIn, YouTube, Pinterest, Threads, and Bluesky
 - **Media Upload** — Upload images and videos via signed URL flow
-- **AI Content Generation** — Generate images (Fireworks.ai SDXL), captions, and hashtags (Gemini/OpenAI)
-- **Stupid Correlations** — Generate viral correlation content with charts, images, and animated videos via statapp
+- **AI Image Generation** — Generate images with [fal.ai](https://fal.ai) (FLUX). Captions and hashtags are written by Claude directly — no text-generation API needed
 - **Analytics** — View post performance, best posting times, trends, and engagement metrics
 - **Account Management** — List connected social accounts and their status
 
@@ -31,7 +30,7 @@ Run these two commands inside a Claude Code session:
 /plugin marketplace add STGime/posta-skill
 
 # Step 2: Install the plugin
-/plugin install posta-skill
+/plugin install posta-skill@posta-plugins
 ```
 
 The plugin will be downloaded and available across all your projects.
@@ -74,38 +73,59 @@ If the skill activates and attempts to authenticate, the installation is working
 
 ## Configuration
 
-The plugin needs credentials to connect to Posta and (optionally) to AI generation services. There are two ways to configure them.
+The plugin needs credentials to connect to Posta and (optionally) to the fal.ai image generator.
 
-### Option 1: Shell profile (recommended — persistent across all sessions)
+### Option 1: API Token (recommended)
 
-Add the variables to your shell profile so they're always available:
+API tokens are the simplest and most secure way to authenticate. Generate one from your Posta dashboard or via the API, then set a single environment variable:
 
-**For zsh (macOS default):**
+**Shell profile (persistent across all sessions):**
 ```bash
-# Open your profile
-nano ~/.zshrc
+# ~/.zshrc or ~/.bash_profile
+export POSTA_API_TOKEN="posta_your_token_here"
+```
 
-# Add these lines at the bottom:
+**Claude Code settings** — `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "POSTA_API_TOKEN": "posta_your_token_here"
+  }
+}
+```
+
+**Dedicated credentials file** — `~/.posta/credentials`:
+```bash
+POSTA_API_TOKEN="posta_your_token_here"
+```
+
+To generate a token via the API (requires a one-time login):
+```bash
+# Get a JWT first
+TOKEN=$(curl -sf -X POST https://api.getposta.app/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"your@email.com","password":"your-password"}' | jq -r '.access_token')
+
+# Create an API token
+curl -sf -X POST https://api.getposta.app/v1/auth/tokens \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Claude Code CLI"}' | jq '.token'
+```
+
+Save the returned `posta_...` token — it is shown only once.
+
+### Option 2: Email & Password (legacy)
+
+You can still use email/password. The plugin will log in and cache a JWT automatically.
+
+**Shell profile:**
+```bash
 export POSTA_EMAIL="your@email.com"
 export POSTA_PASSWORD="your-posta-password"
-
-# Save and reload
-source ~/.zshrc
 ```
 
-**For bash:**
-```bash
-nano ~/.bash_profile
-
-# Add the same export lines, then:
-source ~/.bash_profile
-```
-
-### Option 2: Claude Code settings file (project-specific or global)
-
-You can set environment variables in Claude Code's settings files. These are read at startup.
-
-**Global** (all projects) — `~/.claude/settings.json`:
+**Claude Code settings** — `~/.claude/settings.json`:
 ```json
 {
   "env": {
@@ -115,31 +135,21 @@ You can set environment variables in Claude Code's settings files. These are rea
 }
 ```
 
-**Project-specific** (not committed to git) — `.claude/settings.local.json`:
-```json
-{
-  "env": {
-    "POSTA_EMAIL": "your@email.com",
-    "POSTA_PASSWORD": "your-posta-password",
-    "STATAPP_URL": "https://your-statapp.com"
-  }
-}
-```
-
-> **Note:** Shell environment variables take precedence over settings.json. Changes to either require restarting Claude Code.
+> **Note:** Shell environment variables take precedence over settings files. Changes require restarting Claude Code.
 
 ---
 
 ## Environment Variables Reference
 
-### Required
+### Authentication (one of the following)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `POSTA_EMAIL` | Your Posta account email | `user@example.com` |
-| `POSTA_PASSWORD` | Your Posta account password | `my-secure-password` |
+| `POSTA_API_TOKEN` | **Recommended.** Personal API token (starts with `posta_`) | `posta_a1b2c3d4...` |
+| `POSTA_EMAIL` | Your Posta account email (legacy) | `user@example.com` |
+| `POSTA_PASSWORD` | Your Posta account password (legacy) | `my-secure-password` |
 
-Without these, the plugin cannot authenticate and no API calls will work.
+Set `POSTA_API_TOKEN` for the simplest setup. If set, email/password are not needed.
 
 ### Posta API
 
@@ -149,51 +159,27 @@ Without these, the plugin cannot authenticate and no API calls will work.
 
 You only need to set this if you're running a self-hosted Posta instance or connecting to a staging environment.
 
-### Stupid Correlations (statapp)
+### AI Image Generation
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `STATAPP_URL` | Base URL of your statapp instance | `https://statapp.example.com` |
-| `STATAPP_EMAIL` | Your statapp account email | `user@example.com` |
-| `STATAPP_PASSWORD` | Your statapp account password | `my-secure-password` |
-
-All three are required if you want to generate "Stupid Correlations" content (viral data correlation images and videos). Without these, correlation-related commands won't work, but all other Posta features function normally.
-
-### AI Content Generation
-
-These are optional. Each unlocks a different generation capability:
+Optional — only needed if you want Claude to generate images from text prompts:
 
 | Variable | Service | What it enables | Where to get a key |
 |----------|---------|----------------|-------------------|
-| `FIREWORKS_API_KEY` | [Fireworks.ai](https://fireworks.ai) | AI image generation (SDXL) | [fireworks.ai/account/api-keys](https://fireworks.ai/account/api-keys) |
-| `GEMINI_API_KEY` | [Google Gemini](https://ai.google.dev) | Caption and hashtag generation | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| `OPENAI_API_KEY` | [OpenAI](https://openai.com) | Alternative caption generation | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `FAL_KEY` | [fal.ai](https://fal.ai) | AI image generation (FLUX) | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
 
-You don't need all three — each is independent:
-- **Fireworks** is for generating images from text prompts
-- **Gemini** or **OpenAI** are for generating captions, hashtags, and post copy (pick one or both)
-- Without any generation keys, you can still upload your own media and create posts manually
+- Captions, hashtags, and post copy are written by **Claude itself** — no text-generation API key is required.
+- Without `FAL_KEY` you can still upload your own media and create posts; you just can't generate images on the fly.
 
 ### Full configuration example
 
 ```bash
 # ~/.zshrc
 
-# Required — Posta credentials
-export POSTA_EMAIL="your@email.com"
-export POSTA_PASSWORD="your-posta-password"
+# Posta auth (recommended: API token)
+export POSTA_API_TOKEN="posta_a1b2c3d4e5f6..."
 
-# Optional — Stupid Correlations
-export STATAPP_URL="https://statapp.example.com"
-export STATAPP_EMAIL="your@email.com"
-export STATAPP_PASSWORD="your-statapp-password"
-
-# Optional — AI image generation
-export FIREWORKS_API_KEY="fw_1234567890abcdef"
-
-# Optional — AI text generation (pick one or both)
-export GEMINI_API_KEY="AIzaSy..."
-export OPENAI_API_KEY="sk-proj-..."
+# Optional — AI image generation (fal.ai)
+export FAL_KEY="key_id:key_secret"
 ```
 
 After saving, reload your shell and restart Claude Code:
@@ -207,9 +193,11 @@ source ~/.zshrc
 ## Security Notes
 
 - **Never commit credentials to git.** Use `.claude/settings.local.json` (gitignored by default) or shell profile for secrets.
-- The plugin caches your Posta JWT token at `/tmp/.posta_token`. This is a temporary file that expires with the token and is cleared on reboot.
-- API keys for Fireworks, Gemini, and OpenAI are sent only to their respective services — never to Posta.
+- **API tokens are the recommended auth method.** They don't expose your account password, are long-lived, and can be revoked individually without changing your password.
+- The plugin caches your Posta JWT token at `/tmp/.posta_token`. This is a temporary file that expires with the token and is cleared on reboot. API tokens skip this cache entirely.
+- Your `FAL_KEY` is sent only to fal.ai — never to Posta.
 - The plugin always creates posts as **drafts first** and asks for your confirmation before publishing or scheduling.
+- To revoke an API token, use `DELETE /v1/auth/tokens/:id` or manage tokens in your Posta dashboard.
 
 ---
 
@@ -222,37 +210,34 @@ Once configured, just ask Claude naturally:
 
 > Upload this image and post it to Instagram with the caption "Hello world!"
 
-> Generate a stupid correlation and schedule it for tomorrow at 9am on all accounts
-
 > Show me my best performing posts this month
-
-> Create a portrait video correlation for TikTok and schedule it for Friday at 6pm
 
 > What are the best times to post based on my analytics?
 
-> Generate a social media post about spring flowers with AI image and caption
+> Generate a social media post about spring flowers with an AI-generated image
+
+> Build a LinkedIn carousel from these 5 images
 ```
 
 ## What the plugin does behind the scenes
 
 When you ask Claude to perform social media tasks, it:
 
-1. **Authenticates** with your Posta account using `POSTA_EMAIL` / `POSTA_PASSWORD`
+1. **Authenticates** with your Posta account using `POSTA_API_TOKEN` (or `POSTA_EMAIL` / `POSTA_PASSWORD`)
 2. **Calls the Posta API** via the included bash helper script (handles token caching, retries, media upload)
 3. **Shows you a preview** before publishing — caption, platforms, media, and scheduled time
 4. **Suggests optimal posting times** from your analytics data when scheduling
-5. **Generates content** using Fireworks/Gemini/OpenAI when asked (with your confirmation before spending API credits)
+5. **Generates images** with fal.ai when asked (with your confirmation before spending API credits), and writes captions and hashtags itself
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| "POSTA_EMAIL and POSTA_PASSWORD must be set" | Set the required environment variables and restart Claude Code |
+| "POSTA_EMAIL and POSTA_PASSWORD must be set" | Set `POSTA_API_TOKEN` (recommended) or both `POSTA_EMAIL` and `POSTA_PASSWORD`, then restart Claude Code |
+| "API token is invalid or revoked" | Generate a new API token — the current one was revoked or is malformed |
 | "Login failed — no token in response" | Check your email/password. Try logging in at [getposta.app](https://getposta.app) to verify |
 | API returns 403 | Your Posta plan may have expired. Run: "Check my plan status" |
-| Image generation fails silently | Verify `FIREWORKS_API_KEY` is set correctly. Check your Fireworks billing |
-| Statapp commands do nothing | Set `STATAPP_URL`, `STATAPP_EMAIL`, and `STATAPP_PASSWORD` |
-| "Statapp login failed" | Check your statapp email/password credentials |
+| Image generation fails silently | Verify `FAL_KEY` is set correctly (format `key_id:key_secret`). Check your fal.ai billing |
 | Changes to env vars not taking effect | Restart Claude Code — environment variables are read at startup |
 | `jq: command not found` | Install jq: `brew install jq` (macOS) or `apt install jq` (Linux) |
 

@@ -155,9 +155,26 @@ Upload binary file directly to the signed URL (not through Posta API).
 **Auth required.** Soft-delete a media item. **Response 204.**
 
 ### POST `/media/generate-carousel-pdf`
-**Auth required.** Generate a PDF carousel from multiple images.
+**Auth required.** Generate a PDF carousel from multiple images (one page per image, in array order). The returned `media_id` is a normal media item — attach it to a post like any other media and Posta publishes it to LinkedIn via the Documents API (best for LinkedIn; also works on Facebook; image-only platforms like Instagram can't take a PDF).
 
 **Body:** `{ "media_ids": ["uuid", ...], "title": "optional string" }`
+
+**Response 201:** `{ "media_id", "thumbnail_url", "original_url", "page_count" }`
+
+### POST `/media/generate-text-carousel-pdf`
+**Auth required + professional plan.** Generate a PDF carousel where each slide is a title + body composited over a background image. Same output/posting model as `generate-carousel-pdf`.
+
+**Body:**
+```json
+{
+  "slides": [
+    { "media_id": "uuid (background image)", "title": "optional", "body": "optional" }
+  ],
+  "title": "optional string",
+  "logo_media_id": "optional uuid (watermark on every page)"
+}
+```
+Each slide needs a `title` or `body`; 2–20 slides.
 
 **Response 201:** `{ "media_id", "thumbnail_url", "original_url", "page_count" }`
 
@@ -171,7 +188,7 @@ Upload binary file directly to the signed URL (not through Posta API).
 **Body:**
 ```json
 {
-  "caption": "string (max 2200 chars, optional if mediaIds provided)",
+  "caption": "string (optional if mediaIds provided; enforced per target platform — e.g. Instagram/TikTok 2200, LinkedIn 3000, X 280, Facebook 63206)",
   "hashtags": ["string"],
   "mediaIds": ["uuid"],
   "socialAccountIds": ["string (required, min 1)"],

@@ -7,15 +7,148 @@ set -euo pipefail
 POSTA_BASE_URL="${POSTA_BASE_URL:-https://api.getposta.app/v1}"
 POSTA_TOKEN_FILE="/tmp/.posta_token"
 
-STATAPP_BASE_URL="${STATAPP_URL:-}"
-STATAPP_TOKEN_FILE="/tmp/.statapp_token"
-STATAPP_DEVICE_ID="${STATAPP_DEVICE_ID:-claude-plugin-$(whoami)}"
+# ─── JSON Parsing Helper ─────────────────────────────────────────────────────
+
+# Resolve script directory (works in both bash and zsh)
+POSTA_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd 2>/dev/null)" || \
+POSTA_SCRIPT_DIR="$(cd "$(dirname "${0}")" && pwd 2>/dev/null)" || \
+POSTA_SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/skills/posta/scripts"
+
+posta_sanitize_json() {
+  # Sanitize a JSON API response so jq can parse it.
+  # Reads from a file path (arg 1) to avoid bash argument length limits on large responses.
+  # Python parses with strict=False to handle literal control chars in captions,
+  # then re-serializes as clean JSON.
+  local tmpfile="$1"
+  python3 "${POSTA_SCRIPT_DIR}/sanitize_json.py" "$tmpfile" 2>/dev/null || cat "$tmpfile"
+}
+
+# ─── Credentials Discovery ───────────────────────────────────────────────────
+
+posta_discover_credentials() {
+  # Only run discovery once per session
+  if [[ "${_POSTA_CREDS_DISCOVERED:-}" == "1" ]]; then
+    return 0
+  fi
+  export _POSTA_CREDS_DISCOVERED=1
+
+  # If API token already set, skip password discovery
+  if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
+    return 0
+  fi
+
+  # Skip if already set
+  if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+    return 0
+  fi
+
+  local source_found=""
+
+  # Helper: extract a var value from a file (safe under pipefail)
+  _posta_extract_var() {
+    local varname="$1" file="$2"
+    grep -E "^(export )?${varname}=" "$file" 2>/dev/null | tail -1 | sed "s/^export //" | sed "s/^${varname}=//" | tr -d '"' | tr -d "'" || true
+  }
+
+  # Discover POSTA_API_TOKEN from common locations (check before email/password)
+  if [[ -z "${POSTA_API_TOKEN:-}" ]]; then
+    for src in "$HOME/.posta/credentials" "$HOME/.zshrc" "$HOME/.bashrc" .env .env.local .env.production; do
+      if [[ -f "$src" ]]; then
+        local val
+        val=$(_posta_extract_var POSTA_API_TOKEN "$src")
+        if [[ -n "$val" ]]; then
+          export POSTA_API_TOKEN="$val"
+          echo "INFO: Posta API token loaded from ${src}" >&2
+          return 0
+        fi
+      fi
+    done
+  fi
+
+  # 1. Check shell profiles (~/.zshrc, ~/.bashrc)
+  for profile in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if [[ -f "$profile" ]]; then
+      local val
+      val=$(_posta_extract_var POSTA_EMAIL "$profile")
+      if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
+        export POSTA_EMAIL="$val"
+      fi
+      val=$(_posta_extract_var POSTA_PASSWORD "$profile")
+      if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
+        export POSTA_PASSWORD="$val"
+      fi
+      if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+        source_found="$profile"
+        break
+      fi
+    fi
+  done
+
+  # 2. Check .env files in CWD
+  if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
+    for envfile in .env .env.local .env.production; do
+      if [[ -f "$envfile" ]]; then
+        local val
+        val=$(_posta_extract_var POSTA_EMAIL "$envfile")
+        if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
+          export POSTA_EMAIL="$val"
+        fi
+        val=$(_posta_extract_var POSTA_PASSWORD "$envfile")
+        if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
+          export POSTA_PASSWORD="$val"
+        fi
+        if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+          source_found="$envfile"
+          break
+        fi
+      fi
+    done
+  fi
+
+  # 3. Check dedicated credentials file
+  if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
+    local creds_file="$HOME/.posta/credentials"
+    if [[ -f "$creds_file" ]]; then
+      local val
+      val=$(_posta_extract_var POSTA_EMAIL "$creds_file")
+      if [[ -n "$val" && -z "${POSTA_EMAIL:-}" ]]; then
+        export POSTA_EMAIL="$val"
+      fi
+      val=$(_posta_extract_var POSTA_PASSWORD "$creds_file")
+      if [[ -n "$val" && -z "${POSTA_PASSWORD:-}" ]]; then
+        export POSTA_PASSWORD="$val"
+      fi
+      if [[ -n "${POSTA_EMAIL:-}" && -n "${POSTA_PASSWORD:-}" ]]; then
+        source_found="$creds_file"
+      fi
+    fi
+  fi
+
+  # Also discover FAL_KEY (fal.ai image generation) if missing
+  if [[ -z "${FAL_KEY:-}" ]]; then
+    for src in "$HOME/.zshrc" "$HOME/.bashrc" .env .env.local .env.development .env.production "$HOME/.posta/credentials"; do
+      if [[ -f "$src" ]]; then
+        local val
+        val=$(_posta_extract_var FAL_KEY "$src")
+        if [[ -n "$val" ]]; then
+          export FAL_KEY="$val"
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [[ -n "$source_found" ]]; then
+    echo "INFO: Posta credentials loaded from ${source_found}" >&2
+  fi
+}
 
 # ─── Authentication ───────────────────────────────────────────────────────────
 
 posta_login() {
   if [[ -z "${POSTA_EMAIL:-}" || -z "${POSTA_PASSWORD:-}" ]]; then
     echo "ERROR: POSTA_EMAIL and POSTA_PASSWORD must be set" >&2
+    echo "Searched: env vars, ~/.zshrc, ~/.bashrc, .env files, ~/.posta/credentials" >&2
     return 1
   fi
 
@@ -38,12 +171,18 @@ posta_login() {
 }
 
 posta_get_token() {
+  # If POSTA_API_TOKEN is set, use it directly (no login needed)
+  if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
+    printf '%s' "$POSTA_API_TOKEN"
+    return 0
+  fi
+
   # Return cached token if it exists and is non-empty
   if [[ -f "$POSTA_TOKEN_FILE" ]]; then
     local token
     token=$(cat "$POSTA_TOKEN_FILE")
     if [[ -n "$token" ]]; then
-      echo "$token"
+      printf '%s' "$token"
       return 0
     fi
   fi
@@ -59,43 +198,56 @@ posta_api() {
   local endpoint="$2"
   local body="${3:-}"
   local token
+  local tmpfile="/tmp/.posta_response_$$"
 
   token=$(posta_get_token)
 
   local args=(
-    -sf
+    -s
     -X "$method"
     -H "Authorization: Bearer ${token}"
     -H "Content-Type: application/json"
+    -o "$tmpfile"
+    -w "%{http_code}"
   )
 
   if [[ -n "$body" ]]; then
     args+=(-d "$body")
   fi
 
-  local response http_code
-  response=$(curl -w "\n%{http_code}" "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
-  http_code=$(echo "$response" | tail -1)
-  response=$(echo "$response" | sed '$d')
+  local http_code
+  http_code=$(curl "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
 
-  # If 401, re-login and retry once
+  # If 401, handle based on token type
   if [[ "$http_code" == "401" ]]; then
+    if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
+      echo "ERROR: API token is invalid or revoked. Generate a new one at your Posta dashboard." >&2
+      rm -f "$tmpfile"
+      return 1
+    fi
+    # JWT flow: re-login and retry once
     rm -f "$POSTA_TOKEN_FILE"
     token=$(posta_login)
-    args[4]="Authorization: Bearer ${token}"
+    args[6]="Authorization: Bearer ${token}"
 
-    response=$(curl -w "\n%{http_code}" "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
-    http_code=$(echo "$response" | tail -1)
-    response=$(echo "$response" | sed '$d')
+    http_code=$(curl "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
   fi
 
   if [[ "$http_code" -ge 400 ]]; then
     echo "ERROR: API returned HTTP ${http_code}" >&2
-    echo "$response" >&2
+    cat "$tmpfile" >&2
+    rm -f "$tmpfile"
     return 1
   fi
 
-  echo "$response"
+  # Sanitize control characters that break jq, output to stdout.
+  # Also saved to /tmp/.posta_last_response for safe access when callers
+  # need to avoid bash echo corrupting \n in JSON strings.
+  # Use: posta_api ... | jq    (pipe, always safe)
+  # Or:  posta_api ... > /dev/null; jq ... /tmp/.posta_last_response
+  posta_sanitize_json "$tmpfile" > /tmp/.posta_last_response
+  cat /tmp/.posta_last_response
+  rm -f "$tmpfile"
 }
 
 # ─── Media Upload (3-step signed URL flow) ────────────────────────────────────
@@ -181,13 +333,21 @@ posta_upload_from_url() {
 # ─── Convenience wrappers ─────────────────────────────────────────────────────
 
 posta_list_accounts() {
-  posta_api GET "/social-accounts"
+  # API wraps accounts in { accounts: [...] } — unwrap to plain array
+  posta_api GET "/social-accounts" | jq '.accounts // .'
 }
 
 posta_list_posts() {
-  local limit="${1:-20}"
-  local offset="${2:-0}"
-  posta_api GET "/posts?limit=${limit}&offset=${offset}"
+  # Usage: posta_list_posts [post_status] [limit] [offset]
+  # post_status: scheduled, posted, draft, failed, cancelled (optional — omit or pass "" for all)
+  local post_status="${1:-}"
+  local limit="${2:-20}"
+  local offset="${3:-0}"
+  local query="limit=${limit}&offset=${offset}"
+  if [[ -n "$post_status" ]]; then
+    query="${query}&status=${post_status}"
+  fi
+  posta_api GET "/posts?${query}"
 }
 
 posta_create_post() {
@@ -219,118 +379,102 @@ posta_get_plan() {
   posta_api GET "/users/plan"
 }
 
-# ─── Statapp (Stupid Correlations) ────────────────────────────────────────────
-
-statapp_login() {
-  if [[ -z "${STATAPP_BASE_URL:-}" ]]; then
-    echo "ERROR: STATAPP_URL must be set" >&2
-    return 1
-  fi
-  if [[ -z "${STATAPP_EMAIL:-}" || -z "${STATAPP_PASSWORD:-}" ]]; then
-    echo "ERROR: STATAPP_EMAIL and STATAPP_PASSWORD must be set" >&2
-    return 1
-  fi
-
-  local response
-  response=$(curl -sf -X POST "${STATAPP_BASE_URL}/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\": \"${STATAPP_EMAIL}\", \"password\": \"${STATAPP_PASSWORD}\"}")
-
-  local token
-  token=$(echo "$response" | jq -r '.token // .access_token // .idToken // empty')
-
-  if [[ -z "$token" ]]; then
-    echo "ERROR: Statapp login failed — no token in response" >&2
-    echo "$response" >&2
-    return 1
-  fi
-
-  echo "$token" > "$STATAPP_TOKEN_FILE"
-  echo "$token"
+posta_get_post() {
+  local post_id="$1"
+  posta_api GET "/posts/${post_id}"
 }
 
-statapp_get_token() {
-  if [[ -f "$STATAPP_TOKEN_FILE" ]]; then
-    local token
-    token=$(cat "$STATAPP_TOKEN_FILE")
-    if [[ -n "$token" ]]; then
-      echo "$token"
-      return 0
-    fi
-  fi
-
-  statapp_login
+posta_update_post() {
+  local post_id="$1"
+  local body="$2"
+  posta_api PATCH "/posts/${post_id}" "$body"
 }
 
-statapp_api() {
-  local method="$1"
-  local endpoint="$2"
-  local body="${3:-}"
-
-  if [[ -z "${STATAPP_BASE_URL:-}" ]]; then
-    echo "ERROR: STATAPP_URL must be set" >&2
-    return 1
-  fi
-
-  local token
-  token=$(statapp_get_token)
-
-  local args=(
-    -sf
-    -X "$method"
-    -H "Authorization: Bearer ${token}"
-    -H "X-Device-Id: ${STATAPP_DEVICE_ID}"
-    -H "Content-Type: application/json"
-  )
-
-  if [[ -n "$body" ]]; then
-    args+=(-d "$body")
-  fi
-
-  local response http_code
-  response=$(curl -w "\n%{http_code}" "${args[@]}" "${STATAPP_BASE_URL}${endpoint}")
-  http_code=$(echo "$response" | tail -1)
-  response=$(echo "$response" | sed '$d')
-
-  # If 401, re-login and retry once
-  if [[ "$http_code" == "401" ]]; then
-    rm -f "$STATAPP_TOKEN_FILE"
-    token=$(statapp_login)
-    args[4]="Authorization: Bearer ${token}"
-
-    response=$(curl -w "\n%{http_code}" "${args[@]}" "${STATAPP_BASE_URL}${endpoint}")
-    http_code=$(echo "$response" | tail -1)
-    response=$(echo "$response" | sed '$d')
-  fi
-
-  if [[ "$http_code" -ge 400 ]]; then
-    echo "ERROR: Statapp API returned HTTP ${http_code}" >&2
-    echo "$response" >&2
-    return 1
-  fi
-
-  echo "$response"
+posta_delete_post() {
+  local post_id="$1"
+  posta_api DELETE "/posts/${post_id}"
 }
 
-statapp_generate_random() {
-  local aspect_ratio="${1:-square}"
-  local chart_style="${2:-classic}"
-  local include_video="${3:-false}"
-  statapp_api POST "/api/generate/random" \
-    "{\"aspectRatio\": \"${aspect_ratio}\", \"chartStyle\": \"${chart_style}\", \"includeVideo\": ${include_video}}"
+posta_cancel_post() {
+  local post_id="$1"
+  posta_api POST "/posts/${post_id}/cancel"
 }
 
-statapp_animate() {
+posta_get_media() {
+  local media_id="$1"
+  posta_api GET "/media/${media_id}"
+}
+
+# ─── LinkedIn Carousels (PDF documents) ───────────────────────────────────────
+
+posta_generate_carousel_pdf() {
+  # Build a LinkedIn carousel PDF from existing image media ids (one page each).
+  # Args: <media_ids_json_array> [title]
+  # Returns: { media_id, thumbnail_url, original_url, page_count }
+  # Attach the returned media_id to a LinkedIn post like any other media — Posta
+  # detects the PDF and publishes it via LinkedIn's Documents API.
+  local media_ids_json="$1"
+  local title="${2:-}"
+  local payload
+  payload=$(jq -n --argjson mediaIds "$media_ids_json" --arg title "$title" \
+    '{media_ids: $mediaIds} + (if $title == "" then {} else {title: $title} end)')
+  posta_api POST "/media/generate-carousel-pdf" "$payload"
+}
+
+posta_generate_text_carousel_pdf() {
+  # Build a LinkedIn carousel PDF where each slide is a title+body composited over
+  # a background image media id (Professional plan). Pass the full JSON body:
+  #   {"slides":[{"media_id":"..","title":"..","body":".."}], "title":"..", "logo_media_id":".."}
+  # Returns: { media_id, thumbnail_url, original_url, page_count }
   local body="$1"
-  statapp_api POST "/api/generate/animate" "$body"
+  posta_api POST "/media/generate-text-carousel-pdf" "$body"
 }
 
-statapp_animate_status() {
-  local job_id="$1"
-  local wait="${2:-true}"
-  statapp_api GET "/api/generate/animate/status/${job_id}?wait=${wait}"
+# ─── Multiline Caption Helper ────────────────────────────────────────────────
+
+posta_create_post_from_file() {
+  # Creates a post using a caption from a file — handles multiline text safely
+  local caption_file="$1"
+  local media_ids_json="${2:-[]}"
+  local account_ids_json="$3"
+  local is_draft="${4:-true}"
+  local hashtags_json="${5:-[]}"
+
+  local payload
+  payload=$(jq -n \
+    --arg caption "$(cat "$caption_file")" \
+    --argjson mediaIds "$media_ids_json" \
+    --argjson accountIds "$account_ids_json" \
+    --argjson isDraft "$is_draft" \
+    --argjson hashtags "$hashtags_json" \
+    '{caption: $caption, mediaIds: $mediaIds, socialAccountIds: $accountIds, isDraft: $isDraft, hashtags: $hashtags}')
+
+  posta_api POST "/posts" "$payload"
 }
 
-statapp_get_styles() {
-  statapp_api GET "/api/generate/styles"
+# ─── fal.ai API Key Validation ────────────────────────────────────────────────
+
+fal_validate_key() {
+  # Discover key if not set
+  posta_discover_credentials
+
+  if [[ -z "${FAL_KEY:-}" ]]; then
+    echo "ERROR: FAL_KEY is not set." >&2
+    echo "Set it as an env var, in .env.development, ~/.zshrc, or ~/.posta/credentials" >&2
+    echo "Get a key at https://fal.ai/dashboard/keys" >&2
+    return 1
+  fi
+
+  # fal keys look like "<key_id>:<key_secret>". A live check would incur image
+  # generation cost, so we validate presence/format here — the real test is the
+  # first generation call.
+  if [[ "$FAL_KEY" != *:* ]]; then
+    echo "WARN: FAL_KEY doesn't look like a fal.ai key (expected '<id>:<secret>')." >&2
+  fi
+
+  echo "OK: FAL_KEY is set" >&2
+  return 0
 }
+
+# ─── Auto-discover credentials on source ────────────────────────────────────
+posta_discover_credentials

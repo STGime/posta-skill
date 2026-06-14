@@ -23,12 +23,16 @@ ACCOUNTS=$(posta_list_accounts)
 # Upload image
 MEDIA_ID=$(posta_upload_media "/path/to/image.jpg" "image/jpeg")
 
+# Get account IDs (integers) and convert to strings for socialAccountIds
+INSTA_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "instagram") | .id | tostring')
+X_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "x") | .id | tostring')
+
 # Create post as draft first
 POST=$(posta_create_post '{
   "caption": "Check this out!",
   "hashtags": ["photo", "vibes"],
   "mediaIds": ["'"${MEDIA_ID}"'"],
-  "socialAccountIds": ["instagram-id", "x-id"],
+  "socialAccountIds": ["'"${INSTA_ID}"'", "'"${X_ID}"'"],
   "isDraft": true
 }')
 
@@ -40,57 +44,7 @@ posta_publish_post "$POST_ID"
 
 ---
 
-## 2. Generate Stupid Correlation and Schedule
-
-**User:** "Generate a stupid correlation and schedule it for tomorrow at 9am on all accounts"
-
-**Claude's steps:**
-1. Authenticate with Posta
-2. List accounts to get all active account IDs
-3. Call statapp `/api/generate/random` with appropriate aspect ratio
-4. Display the generated correlation (headline, caption, image) to user
-5. Upload the generated image to Posta
-6. Create post with the generated caption and hashtags
-7. Schedule for tomorrow at 9:00 AM in the user's timezone
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
-
-# Get all accounts
-ACCOUNTS=$(posta_list_accounts)
-ACCOUNT_IDS=$(echo "$ACCOUNTS" | jq -r '[.[].id] | join(",")')
-
-# Generate correlation (square for multi-platform)
-CORRELATION=$(statapp_generate_random "square" "classic" false)
-
-IMAGE_URL=$(echo "$CORRELATION" | jq -r '.image.url')
-HEADLINE=$(echo "$CORRELATION" | jq -r '.caption.headline')
-CAPTION_TEXT=$(echo "$CORRELATION" | jq -r '.caption.caption')
-
-# Show user the result for confirmation
-echo "Generated: ${HEADLINE}"
-echo "Caption: ${CAPTION_TEXT}"
-echo "Image: ${IMAGE_URL}"
-
-# Upload to Posta
-MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "image/png")
-
-# Create and schedule
-POST=$(posta_create_post '{
-  "caption": "'"${CAPTION_TEXT}"'",
-  "hashtags": ["stupidcorrelations", "data", "funny", "statistics"],
-  "mediaIds": ["'"${MEDIA_ID}"'"],
-  "socialAccountIds": ['"$(echo "$ACCOUNTS" | jq '[.[].id]')"'],
-  "isDraft": true
-}')
-
-POST_ID=$(echo "$POST" | jq -r '.id')
-posta_schedule_post "$POST_ID" "2026-03-02T09:00:00Z"
-```
-
----
-
-## 3. View Best Performing Posts
+## 2. View Best Performing Posts
 
 **User:** "Show me my best performing posts this month"
 
@@ -120,149 +74,150 @@ echo "$TOP_POSTS" | jq '.items[] | {caption: .caption[:50], platform: .platform,
 
 ---
 
-## 4. Create Portrait Video for TikTok
-
-**User:** "Create a video correlation for TikTok and schedule it for Friday at 6pm"
-
-**Claude's steps:**
-1. Authenticate with Posta
-2. Find the TikTok account
-3. Generate correlation with portrait aspect ratio and video
-4. Show preview (headline, caption, image thumbnail)
-5. Upload video to Posta
-6. Create post with TikTok platform configuration
-7. Schedule for Friday at 6pm
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
-
-# Find TikTok account
-ACCOUNTS=$(posta_list_accounts)
-TIKTOK_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "tiktok") | .id')
-
-# Generate with video (portrait for TikTok)
-RESULT=$(statapp_generate_random "portrait" "neon" true)
-
-VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url')
-CAPTION_TEXT=$(echo "$RESULT" | jq -r '.caption.caption')
-
-# Upload video to Posta
-MEDIA_ID=$(posta_upload_from_url "$VIDEO_URL" "video/mp4")
-
-# Create post with TikTok config
-POST=$(posta_create_post '{
-  "caption": "'"${CAPTION_TEXT}"'",
-  "hashtags": ["stupidcorrelations", "data", "funfacts", "statistics", "correlation"],
-  "mediaIds": ["'"${MEDIA_ID}"'"],
-  "socialAccountIds": ["'"${TIKTOK_ID}"'"],
-  "isDraft": true,
-  "platformConfigurations": {
-    "tiktok": {
-      "privacyLevel": "PUBLIC_TO_EVERYONE",
-      "allowComment": true,
-      "allowDuet": false,
-      "allowStitch": false
-    }
-  }
-}')
-
-POST_ID=$(echo "$POST" | jq -r '.id')
-
-# Schedule for Friday at 6pm
-posta_schedule_post "$POST_ID" "2026-03-06T18:00:00Z"
-```
-
----
-
-## 5. Batch Generate Marketing Videos and Schedule Them
-
-**User:** "Generate 5 marketing videos and schedule them across the week"
-
-**Claude's steps:**
-1. Run the `create-promo-videos.js` script on the statapp server to generate 5 videos
-2. Authenticate with Posta and list accounts
-3. Upload each video to Posta
-4. Create posts with generated captions and schedule across the week at optimal times
-5. Show preview of the full schedule for confirmation
-
-```bash
-source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
-
-# Step 1: Generate 5 promo videos (run on statapp server)
-cd ~/statapp_backend
-node scripts/create-promo-videos.js 5
-# Output: promo-videos/promo_1_*.mp4, promo_2_*.mp4, etc.
-
-# Step 2: Get best posting times from Posta analytics
-BEST_TIMES=$(posta_get_best_times)
-
-# Step 3: Get TikTok account
-ACCOUNTS=$(posta_list_accounts)
-TIKTOK_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "tiktok") | .id')
-
-# Step 4: Upload each video and schedule
-for video in ~/statapp_backend/promo-videos/promo_*.mp4; do
-  MEDIA_ID=$(posta_upload_media "$video" "video/mp4")
-
-  POST=$(posta_create_post '{
-    "caption": "Mind-blowing correlation! 🤯📊 #stupidcorrelations #data #funfacts",
-    "hashtags": ["stupidcorrelations", "data", "statistics", "correlation", "funfacts"],
-    "mediaIds": ["'"${MEDIA_ID}"'"],
-    "socialAccountIds": ["'"${TIKTOK_ID}"'"],
-    "isDraft": true,
-    "platformConfigurations": {
-      "tiktok": { "privacyLevel": "PUBLIC_TO_EVERYONE", "allowComment": true }
-    }
-  }')
-
-  POST_ID=$(echo "$POST" | jq -r '.id')
-  # Schedule at optimal time (calculate per day)
-  posta_schedule_post "$POST_ID" "2026-03-03T18:00:00Z"
-done
-```
-
----
-
-## 6. Generate AI Image and Caption from Scratch
+## 3. Generate AI Image and Caption from Scratch
 
 **User:** "Generate a social media post about spring flowers"
 
 **Claude's steps:**
-1. Generate an image using Fireworks SDXL with a spring flowers prompt
-2. Generate a caption using Gemini or OpenAI
-3. Generate relevant hashtags
-4. Upload the image to Posta
-5. Ask user which accounts to post to
-6. Create the post
+1. Generate an image using fal.ai (FLUX) with a spring flowers prompt
+2. Write the caption and hashtags directly (you are Claude — no text API needed)
+3. Upload the image to Posta
+4. Ask user which accounts to post to
+5. Create the post
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
 
-# Generate image
-curl -s -X POST \
-  "https://api.fireworks.ai/inference/v1/image_generation/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0" \
-  -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
+# Generate image with fal.ai — returns a hosted URL, not raw bytes
+RESULT=$(curl -s -X POST "https://fal.run/fal-ai/flux/schnell" \
+  -H "Authorization: Key ${FAL_KEY}" \
   -H "Content-Type: application/json" \
-  -H "Accept: image/png" \
   -d '{
     "prompt": "vibrant spring flowers in a garden, cherry blossoms, tulips, daffodils, photorealistic, natural colors, proper white balance, high quality, detailed",
-    "negative_prompt": "text, watermark, blurry, low quality, distorted",
-    "width": 1024, "height": 1024, "steps": 30, "guidance_scale": 7.5
-  }' --output /tmp/spring_flowers.png
+    "image_size": "square_hd",
+    "num_images": 1
+  }')
+IMAGE_URL=$(echo "$RESULT" | jq -r '.images[0].url')
 
-# Upload to Posta
-MEDIA_ID=$(posta_upload_media /tmp/spring_flowers.png "image/png")
+# Upload the hosted image to Posta
+MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "image/jpeg")
 
-# Generate caption with Gemini
-CAPTION=$(curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{"parts": [{"text": "Write a cheerful Instagram caption about spring flowers arriving. Include 2-3 emojis and a call to action. Max 150 words."}]}],
-    "generationConfig": {"temperature": 0.8}
-  }' | jq -r '.candidates[0].content.parts[0].text')
+# Write the caption yourself (you are Claude) — no external text API
+CAPTION="Spring has sprung 🌸 Fresh blooms, fresh starts. What's the first flower you look for each spring?"
 
 # Show user for approval before posting
 echo "Caption: ${CAPTION}"
-echo "Image uploaded. Ready to create post."
+echo "Image: ${IMAGE_URL}"
 ```
+
+---
+
+## 4. Create Post with Multiline Caption
+
+**User:** "Create a LinkedIn post about EU data sovereignty with a detailed caption"
+
+**Claude's steps:**
+1. Write the multiline caption to a temp file
+2. Use `posta_create_post_from_file` to handle escaping correctly
+3. Manage the post lifecycle with get/update/delete helpers
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+
+# Get LinkedIn account (IDs are integers, convert to string)
+ACCOUNTS=$(posta_list_accounts)
+LINKEDIN_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "linkedin") | .id | tostring')
+
+# Write multiline caption to file (avoids JSON escaping issues)
+cat > /tmp/caption.txt << 'EOF'
+The EU is taking a bold stance on data sovereignty.
+
+Here's what every tech leader needs to know:
+
+1. New regulations require EU data to stay in EU infrastructure
+2. Cloud providers must offer EU-only deployment options
+3. Compliance deadlines are approaching fast
+
+What's your company's strategy? Drop a comment below.
+EOF
+
+# Upload media
+MEDIA_ID=$(posta_upload_media /tmp/eu_data.png "image/png")
+
+# Create post from file — handles all escaping correctly
+POST=$(posta_create_post_from_file /tmp/caption.txt "[\"${MEDIA_ID}\"]" "[\"${LINKEDIN_ID}\"]" true)
+POST_ID=$(echo "$POST" | jq -r '.id')
+
+# Review the created post
+posta_get_post "$POST_ID" | jq '{id, caption, status}'
+
+# Update caption if needed
+posta_update_post "$POST_ID" '{"hashtags": ["datasovereignty", "EU", "cloud", "tech"]}'
+
+# After user confirms, schedule
+posta_schedule_post "$POST_ID" "2026-03-06T09:00:00Z"
+
+# Or if user changes mind, delete
+# posta_delete_post "$POST_ID"
+```
+
+---
+
+## 5. Build a LinkedIn Carousel
+
+**User:** "Make a LinkedIn carousel from these 3 images" (or "...5 slides about our launch lessons")
+
+**Claude's steps:**
+1. Authenticate with Posta and find the LinkedIn account
+2. Upload the source images (or generate backgrounds with fal.ai for a text carousel)
+3. Generate the carousel PDF — Posta returns a normal media id
+4. Attach the carousel media id to a LinkedIn post (Posta publishes it via LinkedIn's Documents API)
+5. Preview, then schedule or publish
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
+
+# Find LinkedIn account
+ACCOUNTS=$(posta_list_accounts)
+LINKEDIN_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "linkedin") | .id | tostring')
+
+# --- Option A: carousel from existing images (one page per image) ---
+M1=$(posta_upload_media "/path/slide1.jpg" "image/jpeg")
+M2=$(posta_upload_media "/path/slide2.jpg" "image/jpeg")
+M3=$(posta_upload_media "/path/slide3.jpg" "image/jpeg")
+
+CAROUSEL=$(posta_generate_carousel_pdf "[\"${M1}\",\"${M2}\",\"${M3}\"]" "Our launch in 3 slides")
+CAROUSEL_MEDIA_ID=$(echo "$CAROUSEL" | jq -r '.media_id')
+
+# --- Option B: text carousel (title+body over background images, Pro plan) ---
+# Generate backgrounds with fal.ai, upload, then pass their ids as slide backgrounds:
+# BG1=$(posta_upload_from_url "$(curl -s -X POST https://fal.run/fal-ai/flux/schnell \
+#   -H "Authorization: Key ${FAL_KEY}" -H "Content-Type: application/json" \
+#   -d '{"prompt":"abstract gradient, brand colors","image_size":"portrait_4_3"}' \
+#   | jq -r '.images[0].url')" "image/jpeg")
+# CAROUSEL=$(posta_generate_text_carousel_pdf '{
+#   "slides": [
+#     {"media_id": "'"${BG1}"'", "title": "Hook", "body": "Why this matters"},
+#     {"media_id": "'"${BG1}"'", "title": "Lesson 1", "body": "Ship small, ship often"}
+#   ],
+#   "title": "5 lessons from launch",
+#   "logo_media_id": "'"${LOGO_ID}"'"
+# }')
+# CAROUSEL_MEDIA_ID=$(echo "$CAROUSEL" | jq -r '.media_id')
+
+# Attach the carousel to a LinkedIn post
+POST=$(posta_create_post '{
+  "caption": "We learned a lot launching. Swipe through 👉",
+  "hashtags": ["startups", "buildinpublic", "lessons"],
+  "mediaIds": ["'"${CAROUSEL_MEDIA_ID}"'"],
+  "socialAccountIds": ["'"${LINKEDIN_ID}"'"],
+  "isDraft": true
+}')
+POST_ID=$(echo "$POST" | jq -r '.id')
+
+# Preview, then publish or schedule
+posta_get_post "$POST_ID" | jq '{id, caption, status}'
+posta_schedule_post "$POST_ID" "2026-03-10T09:00:00Z"
+```
+
+> The carousel is a regular media id — no special post flag. Posta detects the PDF and routes it through LinkedIn's Documents API on publish. Best for LinkedIn (also works on Facebook); image-only platforms like Instagram can't take a PDF.

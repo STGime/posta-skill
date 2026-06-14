@@ -1,147 +1,74 @@
 # AI Content Generation Patterns
 
-## Image Generation — Fireworks.ai SDXL
+## Image Generation — fal.ai (FLUX)
 
-Generate images using Stable Diffusion XL via Fireworks.ai.
+Generate images using FLUX models via fal.ai.
 
-**Endpoint:** `https://api.fireworks.ai/inference/v1/image_generation/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0`
+**Endpoint:** `https://fal.run/fal-ai/flux/schnell` (fast/cheap) or `https://fal.run/fal-ai/flux/dev` (higher quality)
 
-**Required:** `FIREWORKS_API_KEY` environment variable.
+**Required:** `FAL_KEY` environment variable.
+
+- **Get a key:** Sign up at https://fal.ai and create a key at https://fal.ai/dashboard/keys
+- **Key format:** `<key_id>:<key_secret>` (contains a colon)
+- **Auth header:** `Authorization: Key ${FAL_KEY}`
+- **Auto-discovery:** The skill searches env vars, `.env.development`, `~/.zshrc`, `~/.bashrc`, and `~/.posta/credentials`
+- **Validation:** Run `fal_validate_key` to confirm your key is set before generating images
+
+**Error handling:**
+```bash
+# Validate before spending credits
+fal_validate_key || { echo "Fix your fal.ai key first"; exit 1; }
+```
 
 ### Request
 
 ```bash
-curl -s -X POST \
-  "https://api.fireworks.ai/inference/v1/image_generation/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0" \
-  -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
+RESULT=$(curl -s -X POST "https://fal.run/fal-ai/flux/schnell" \
+  -H "Authorization: Key ${FAL_KEY}" \
   -H "Content-Type: application/json" \
-  -H "Accept: image/png" \
   -d '{
     "prompt": "your prompt here, photorealistic, natural colors, proper white balance, vivid but not oversaturated, clean lighting, high quality, detailed, subtle background",
-    "negative_prompt": "text, words, letters, numbers, watermark, logo, blurry, low quality, distorted, ugly, deformed, sepia, brown tint, yellow tint, monochromatic, desaturated, faded colors, vintage filter",
-    "width": 1024,
-    "height": 1024,
-    "steps": 30,
-    "guidance_scale": 7.5,
-    "seed": 12345
-  }' \
-  --output generated_image.png
+    "image_size": "square_hd",
+    "num_images": 1,
+    "enable_safety_checker": true
+  }')
+
+IMAGE_URL=$(echo "$RESULT" | jq -r '.images[0].url')
+CONTENT_TYPE=$(echo "$RESULT" | jq -r '.images[0].content_type // "image/jpeg"')
 ```
 
-**Response:** Raw PNG binary (set `Accept: image/png`).
+**Response:** JSON with a hosted image URL — upload it to Posta with `posta_upload_from_url "$IMAGE_URL" "$CONTENT_TYPE"` (no local file needed).
 
-### Dimensions by Aspect Ratio
+```json
+{
+  "images": [{ "url": "https://fal.media/files/.../out.jpg", "width": 1024, "height": 1024, "content_type": "image/jpeg" }],
+  "seed": 123456,
+  "has_nsfw_concepts": [false]
+}
+```
 
-| Aspect Ratio | Width | Height | Use Case |
-|-------------|-------|--------|---------------------|
-| square | 1024 | 1024 | Instagram feed |
-| portrait | 768 | 1344 | TikTok, Reels, Stories |
-| landscape | 1344 | 768 | LinkedIn, X/Twitter |
+### `image_size` by Aspect Ratio
+
+| `image_size`     | Pixels    | Use Case |
+|------------------|-----------|---------------------|
+| `square_hd`      | 1024×1024 | Instagram feed |
+| `portrait_16_9`  | 1080×1920 | TikTok, Reels, Stories |
+| `landscape_16_9` | 1920×1080 | LinkedIn, X/Twitter |
+| `portrait_4_3`   | 1080×1440 | Pinterest |
+
+(You can also pass a custom `{"image_size": {"width": 1024, "height": 1024}}`.)
 
 ### Prompt Tips
 - Append quality modifiers: "photorealistic, natural colors, proper white balance, high quality, detailed"
-- Use negative prompts to avoid text, watermarks, and color distortion
-- `guidance_scale` of 7.0-8.0 works well for most prompts
-- Vary `seed` for different results from the same prompt
+- FLUX has no `negative_prompt` — describe what you *want*, not what to avoid
+- `fal-ai/flux/dev` gives higher fidelity (slower/pricier); `fal-ai/flux/schnell` is fast and cheap
+- Pass a fixed `"seed"` for reproducible results from the same prompt
 
 ---
 
-## Text Generation — Gemini
+## Captions & Hashtags
 
-Generate captions, hashtags, and post copy using Google Gemini.
-
-**Required:** `GEMINI_API_KEY` environment variable.
-
-### Caption Generation
-
-```bash
-curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{
-      "parts": [{
-        "text": "Write a social media caption for an Instagram post about [topic]. Keep it engaging, use a conversational tone, and include a call to action. Max 200 words."
-      }]
-    }],
-    "generationConfig": {
-      "temperature": 0.8,
-      "maxOutputTokens": 500
-    }
-  }'
-```
-
-**Response:**
-```json
-{
-  "candidates": [{
-    "content": {
-      "parts": [{ "text": "Generated caption text..." }]
-    }
-  }]
-}
-```
-
-### Hashtag Generation
-
-```bash
-curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{
-      "parts": [{
-        "text": "Generate 15-20 relevant hashtags for a social media post about [topic]. Mix popular and niche hashtags. Return as a JSON array of strings without the # symbol."
-      }]
-    }],
-    "generationConfig": {
-      "temperature": 0.6,
-      "maxOutputTokens": 300
-    }
-  }'
-```
-
----
-
-## Text Generation — OpenAI
-
-Alternative text generation using OpenAI.
-
-**Required:** `OPENAI_API_KEY` environment variable.
-
-### Caption Generation
-
-```bash
-curl -s -X POST "https://api.openai.com/v1/chat/completions" \
-  -H "Authorization: Bearer ${OPENAI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o-mini",
-    "messages": [
-      {
-        "role": "system",
-        "content": "You are a social media content expert. Generate engaging captions optimized for the specified platform."
-      },
-      {
-        "role": "user",
-        "content": "Write an Instagram caption about [topic]. Include emojis, a hook in the first line, and a call to action."
-      }
-    ],
-    "temperature": 0.8,
-    "max_tokens": 500
-  }'
-```
-
-**Response:**
-```json
-{
-  "choices": [{
-    "message": {
-      "content": "Generated caption text..."
-    }
-  }]
-}
-```
+Write captions and hashtags yourself — you are Claude, so no external text-generation API (Gemini/OpenAI) is needed. Tailor copy to each platform: hook in the first line, a clear call to action, platform-appropriate length and tone, and a sensible hashtag mix (broad + niche). Always include relevant hashtags by default.
 
 ---
 
@@ -153,33 +80,22 @@ Full workflow using bash helper functions:
 # Source the helper
 source "${CLAUDE_PLUGIN_ROOT}/skills/posta/scripts/posta-api.sh"
 
-# 1. Generate image with Fireworks
-curl -s -X POST \
-  "https://api.fireworks.ai/inference/v1/image_generation/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0" \
-  -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
+# 1. Generate image with fal.ai (FLUX)
+RESULT=$(curl -s -X POST "https://fal.run/fal-ai/flux/schnell" \
+  -H "Authorization: Key ${FAL_KEY}" \
   -H "Content-Type: application/json" \
-  -H "Accept: image/png" \
   -d '{
     "prompt": "a beautiful sunset over mountains, photorealistic, vivid colors, high quality",
-    "negative_prompt": "text, watermark, blurry, low quality",
-    "width": 1024,
-    "height": 1024,
-    "steps": 30,
-    "guidance_scale": 7.5
-  }' \
-  --output /tmp/generated_image.png
+    "image_size": "square_hd",
+    "num_images": 1
+  }')
+IMAGE_URL=$(echo "$RESULT" | jq -r '.images[0].url')
 
-# 2. Upload to Posta
-MEDIA_ID=$(posta_upload_media /tmp/generated_image.png "image/png")
+# 2. Upload the hosted image to Posta
+MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "image/jpeg")
 
-# 3. Generate caption with Gemini
-CAPTION=$(curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{"parts": [{"text": "Write a short Instagram caption about a beautiful mountain sunset. Include emojis."}]}],
-    "generationConfig": {"temperature": 0.8, "maxOutputTokens": 300}
-  }' | jq -r '.candidates[0].content.parts[0].text')
+# 3. Write the caption yourself (you are Claude) — no text API needed
+CAPTION="Golden hour over the peaks 🌄 Nature's daily masterpiece. Where would you watch this from?"
 
 # 4. Get connected accounts
 ACCOUNTS=$(posta_list_accounts)
