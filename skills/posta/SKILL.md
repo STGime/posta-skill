@@ -5,7 +5,7 @@ license: MIT
 homepage: https://github.com/STGime/posta-skill
 metadata:
   author: Posta
-  version: 1.2.2
+  version: 1.3.0
   tags:
     - social-media
     - scheduling
@@ -43,9 +43,9 @@ If `POSTA_API_TOKEN` is set, email/password are not needed and the login flow is
 ### Optional Environment Variables
 
 - `POSTA_BASE_URL` — API base URL (default: `https://api.getposta.app/v1`)
-- `FIREWORKS_API_KEY` — Fireworks.ai API key (for image generation). Keys start with `fw_`. Get one at https://fireworks.ai/account/api-keys. The skill auto-discovers this from env vars, `~/.posta/credentials`, or `.env` files.
-- `GEMINI_API_KEY` — Google Gemini API key (for caption/text generation)
-- `OPENAI_API_KEY` — OpenAI API key (alternative text generation)
+- `FAL_KEY` — fal.ai API key (for image generation). Format is `<key_id>:<key_secret>`. Get one at https://fal.ai/dashboard/keys. The skill auto-discovers this from env vars, `~/.posta/credentials`, or `.env` files.
+
+> Captions and hashtags are written by Claude directly — no text-generation API key is needed. The only external content service is the image generator (fal.ai).
 
 ### Credentials Auto-Discovery
 
@@ -72,12 +72,12 @@ This provides:
 - **Platform Discovery:** `posta_list_platforms`, `posta_get_platform_specs`, `posta_get_aspect_ratios`, `posta_get_platform`, `posta_get_pinterest_boards`
 - **Analytics:** `posta_get_analytics_overview`, `posta_get_analytics_capabilities`, `posta_get_analytics_posts`, `posta_get_post_analytics`, `posta_get_analytics_trends`, `posta_get_best_times`, `posta_get_content_types`, `posta_get_hashtag_analytics`, `posta_compare_posts`, `posta_get_benchmarks`, `posta_export_analytics_csv`, `posta_export_analytics_pdf`, `posta_refresh_post_analytics`, `posta_refresh_all_analytics`
 - **User:** `posta_get_plan`, `posta_get_profile`, `posta_update_profile`
-- **Fireworks:** `fireworks_validate_key`
+- **Images:** `fal_validate_key`
 
 ### Reference Docs
 
 - [Posta API Reference](references/posta-api-reference.md) — Full REST API documentation
-- [Content Generation Patterns](references/content-generation.md) — Fireworks/Gemini/OpenAI usage
+- [Content Generation Patterns](references/content-generation.md) — fal.ai image generation usage
 - [Workflow Examples](examples/workflows.md) — Full example conversations
 
 ---
@@ -240,36 +240,32 @@ posta_publish_post "$POST_ID"
 
 Note: Either `caption` or at least one `mediaIds` entry is required. Text-only posts work for X/Twitter.
 
-### 5. Generate AI Content
+### 5. Generate Images (fal.ai)
 
-**Generate an image with Fireworks SDXL:**
+Write captions and hashtags yourself — you are Claude, no text-generation API is involved. The only external generation service is the image generator below.
+
+**Generate an image with fal.ai (FLUX):**
 ```bash
-curl -s -X POST \
-  "https://api.fireworks.ai/inference/v1/image_generation/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0" \
-  -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
+# fal returns a hosted image URL (JSON), not raw bytes
+RESULT=$(curl -s -X POST "https://fal.run/fal-ai/flux/schnell" \
+  -H "Authorization: Key ${FAL_KEY}" \
   -H "Content-Type: application/json" \
-  -H "Accept: image/png" \
   -d '{
     "prompt": "your descriptive prompt, photorealistic, natural colors, high quality, detailed",
-    "negative_prompt": "text, watermark, blurry, low quality, distorted",
-    "width": 1024, "height": 1024, "steps": 30, "guidance_scale": 7.5
-  }' --output /tmp/generated.png
+    "image_size": "square_hd",
+    "num_images": 1
+  }')
 
-MEDIA_ID=$(posta_upload_media /tmp/generated.png "image/png")
+IMAGE_URL=$(echo "$RESULT" | jq -r '.images[0].url')
+CONTENT_TYPE=$(echo "$RESULT" | jq -r '.images[0].content_type // "image/jpeg"')
+
+# Upload the hosted image straight to Posta
+MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "$CONTENT_TYPE")
 ```
 
-**Generate a caption with Gemini:**
-```bash
-CAPTION=$(curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{"parts": [{"text": "Write an engaging Instagram caption about [topic]. Max 150 words."}]}],
-    "generationConfig": {"temperature": 0.8, "maxOutputTokens": 300}
-  }' | jq -r '.candidates[0].content.parts[0].text')
-```
+> `image_size`: `square_hd` (1024², feed), `portrait_16_9` (Stories/Reels/TikTok), `landscape_16_9` (LinkedIn/X). Use `fal-ai/flux/dev` for higher quality, `fal-ai/flux/schnell` for speed.
 
-See [content-generation.md](references/content-generation.md) for full patterns including OpenAI and hashtag generation.
+See [content-generation.md](references/content-generation.md) for image-generation details and prompt tips.
 
 ### 6. View Analytics
 
@@ -401,7 +397,7 @@ posta_refresh_all_analytics  # Rate limited: 1 per hour
 
 2. **Suggest optimal posting times.** When the user wants to schedule, fetch best-times analytics and recommend the highest-engagement time slot.
 
-3. **Ask before spending API credits.** Image generation (Fireworks) and text generation (Gemini/OpenAI) cost money. Confirm with the user before making generation API calls.
+3. **Ask before spending API credits.** Image generation (fal.ai) costs money. Confirm with the user before making image-generation calls. (Captions and hashtags are written by you, Claude — no cost, no external text API.)
 
 4. **Handle errors gracefully.** If an API call fails, show the error message and suggest next steps (check credentials, verify account connection, check plan limits).
 
@@ -413,7 +409,7 @@ posta_refresh_all_analytics  # Rate limited: 1 per hour
 
 8. **Combine media types strategically.** For maximum reach, generate both an image (for Instagram/LinkedIn) and a video (for TikTok/Reels) from the same content.
 
-9. **Preview generated images before uploading.** After generating an image with Fireworks, use the Read tool to preview it visually before uploading to Posta. This prevents wasted uploads and media quota.
+9. **Preview generated images before uploading.** fal.ai returns a hosted image URL — download it to a temp file (`curl -s "$IMAGE_URL" -o /tmp/preview.jpg`) and use the Read tool to preview it visually before uploading to Posta. This prevents wasted uploads and media quota.
 
 10. **Use `posta_create_post_from_file` for multiline captions.** Write the caption to a temp file and use the file-based helper instead of trying to embed multiline text in JSON strings. This avoids escaping issues.
 

@@ -79,43 +79,35 @@ echo "$TOP_POSTS" | jq '.items[] | {caption: .caption[:50], platform: .platform,
 **User:** "Generate a social media post about spring flowers"
 
 **Claude's steps:**
-1. Generate an image using Fireworks SDXL with a spring flowers prompt
-2. Generate a caption using Gemini or OpenAI
-3. Generate relevant hashtags
-4. Upload the image to Posta
-5. Ask user which accounts to post to
-6. Create the post
+1. Generate an image using fal.ai (FLUX) with a spring flowers prompt
+2. Write the caption and hashtags directly (you are Claude — no text API needed)
+3. Upload the image to Posta
+4. Ask user which accounts to post to
+5. Create the post
 
 ```bash
 source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
 
-# Generate image
-curl -s -X POST \
-  "https://api.fireworks.ai/inference/v1/image_generation/accounts/fireworks/models/stable-diffusion-xl-1024-v1-0" \
-  -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
+# Generate image with fal.ai — returns a hosted URL, not raw bytes
+RESULT=$(curl -s -X POST "https://fal.run/fal-ai/flux/schnell" \
+  -H "Authorization: Key ${FAL_KEY}" \
   -H "Content-Type: application/json" \
-  -H "Accept: image/png" \
   -d '{
     "prompt": "vibrant spring flowers in a garden, cherry blossoms, tulips, daffodils, photorealistic, natural colors, proper white balance, high quality, detailed",
-    "negative_prompt": "text, watermark, blurry, low quality, distorted",
-    "width": 1024, "height": 1024, "steps": 30, "guidance_scale": 7.5
-  }' --output /tmp/spring_flowers.png
+    "image_size": "square_hd",
+    "num_images": 1
+  }')
+IMAGE_URL=$(echo "$RESULT" | jq -r '.images[0].url')
 
-# Upload to Posta
-MEDIA_ID=$(posta_upload_media /tmp/spring_flowers.png "image/png")
+# Upload the hosted image to Posta
+MEDIA_ID=$(posta_upload_from_url "$IMAGE_URL" "image/jpeg")
 
-# Generate caption with Gemini
-CAPTION=$(curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [{"parts": [{"text": "Write a cheerful Instagram caption about spring flowers arriving. Include 2-3 emojis and a call to action. Max 150 words."}]}],
-    "generationConfig": {"temperature": 0.8}
-  }' | jq -r '.candidates[0].content.parts[0].text')
+# Write the caption yourself (you are Claude) — no external text API
+CAPTION="Spring has sprung 🌸 Fresh blooms, fresh starts. What's the first flower you look for each spring?"
 
 # Show user for approval before posting
 echo "Caption: ${CAPTION}"
-echo "Image uploaded. Ready to create post."
+echo "Image: ${IMAGE_URL}"
 ```
 
 ---
