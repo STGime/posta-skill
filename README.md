@@ -8,7 +8,7 @@ Create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitte
 
 - **Post Management** — Create, schedule, publish, update, and cancel posts across 9 platforms
 - **Media Upload** — Upload images and videos with auto MIME detection, manage media library, generate carousel PDFs (from images, or with text composited over background images for LinkedIn document posts)
-- **AI Content Generation** — Generate images (Fireworks SDXL), captions and hashtags (Gemini/OpenAI)
+- **AI Image Generation** — Generate images with [fal.ai](https://fal.ai) (FLUX). Captions and hashtags are written by Claude directly — no text-generation API needed
 - **Analytics** — Performance overview, best posting times, trends, post comparison, hashtag analysis, benchmarks, CSV/PDF export
 - **Platform Discovery** — Query character limits, media requirements, and supported features per platform
 - **Content Calendar** — View scheduled and posted content across date ranges
@@ -165,24 +165,20 @@ The skill discovers credentials from dedicated config files only (shell profiles
 |----------|-------------|---------|
 | `POSTA_BASE_URL` | Override API base URL | `https://api.getposta.app/v1` |
 
-### AI Content Generation (optional)
+### AI Image Generation (optional)
 
 | Variable | Service | What it enables | Get a key |
 |----------|---------|----------------|-----------|
-| `FIREWORKS_API_KEY` | [Fireworks.ai](https://fireworks.ai) | AI image generation (SDXL) | [fireworks.ai/account/api-keys](https://fireworks.ai/account/api-keys) |
-| `GEMINI_API_KEY` | [Google Gemini](https://ai.google.dev) | Caption and hashtag generation | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| `OPENAI_API_KEY` | [OpenAI](https://openai.com) | Alternative caption generation | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `FAL_KEY` | [fal.ai](https://fal.ai) | AI image generation (FLUX) | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
 
-Each key is independent. Without any generation keys, you can still upload your own media and create posts.
+Captions, hashtags, and post copy are written by **Claude itself** — no text-generation API key is needed. Without `FAL_KEY` you can still upload your own media and create posts.
 
 ### Full example
 
 ```bash
 # ~/.zshrc
 export POSTA_API_TOKEN="posta_a1b2c3d4e5f6..."
-export FIREWORKS_API_KEY="fw_1234567890abcdef"       # optional
-export GEMINI_API_KEY="AIzaSy..."                     # optional
-export OPENAI_API_KEY="sk-proj-..."                   # optional
+export FAL_KEY="key_id:key_secret"                    # optional (AI image generation)
 ```
 
 ---
@@ -209,11 +205,10 @@ Generate a social media post about spring flowers with an AI image and caption
 ```
 
 The skill will:
-1. Generate an image using Fireworks SDXL
-2. Generate a caption using Gemini or OpenAI
-3. Generate relevant hashtags
-4. Upload the image and create a draft post
-5. Ask which accounts to post to
+1. Generate an image using fal.ai (FLUX)
+2. Write the caption and hashtags itself (no text API needed)
+3. Upload the image and create a draft post
+4. Ask which accounts to post to
 
 ### View analytics and best posting times
 
@@ -301,7 +296,7 @@ When you ask the AI to perform social media tasks, it:
 2. **Calls the Posta API** via the included bash helper script (handles token caching, retries, media upload)
 3. **Shows you a preview** before publishing — caption, platforms, media, and scheduled time
 4. **Suggests optimal posting times** from your analytics data when scheduling
-5. **Generates content** using Fireworks/Gemini/OpenAI when asked (with your confirmation before spending API credits)
+5. **Generates images** with fal.ai when asked (with your confirmation before spending API credits), and writes captions and hashtags itself
 
 ## Supported Platforms
 
@@ -322,9 +317,9 @@ When you ask the AI to perform social media tasks, it:
 - **Never commit credentials to git.** Use environment variables or `~/.posta/credentials` for secrets.
 - **API tokens are recommended.** They don't expose your password, are long-lived, and can be revoked individually.
 - JWT token cache at `/tmp/.posta_token` is temporary and cleared on reboot. API tokens skip this entirely.
-- AI generation keys (Fireworks, Gemini, OpenAI) are sent only to their respective services — never to Posta.
+- Your fal.ai API key is sent only to fal.ai — never to Posta.
 - The skill always creates posts as **drafts first** and asks for confirmation before publishing.
-- **Credential discovery** reads only specific `POSTA_*` and `FIREWORKS_API_KEY` variable names from a fixed list of files. See [SECURITY.md](SECURITY.md) for a detailed explanation of every file accessed and why.
+- **Credential discovery** reads only specific `POSTA_*` and `FAL_KEY` variable names from a fixed list of files. See [SECURITY.md](SECURITY.md) for a detailed explanation of every file accessed and why.
 
 ## Troubleshooting
 
@@ -334,7 +329,7 @@ When you ask the AI to perform social media tasks, it:
 | "API token is invalid or revoked" | Generate a new API token from your Posta dashboard |
 | "Login failed — no token in response" | Check your email/password at [getposta.app](https://getposta.app) |
 | API returns 403 | Your plan may have expired — ask "Check my plan status" |
-| Image generation fails silently | Verify `FIREWORKS_API_KEY` is set correctly |
+| Image generation fails silently | Verify `FAL_KEY` is set correctly (format `key_id:key_secret`) |
 | Changes to env vars not taking effect | Restart your session — env vars are read at startup |
 | `jq: command not found` | Install jq: `brew install jq` (macOS) or `apt install jq` (Linux) |
 

@@ -16,7 +16,7 @@ The script reads credentials **only** from dedicated config files — never from
 - `POSTA_API_TOKEN`
 - `POSTA_EMAIL` (legacy)
 - `POSTA_PASSWORD` (legacy)
-- `FIREWORKS_API_KEY`
+- `FAL_KEY`
 
 The script uses `grep -E "^(export )?VARNAME="` for exact variable name matching — it does not dump, scan, or exfiltrate file contents. Discovered values are used locally for API authentication and are never logged, transmitted to third parties, or persisted to disk (except the JWT cache at `/tmp/.posta_token`, cleared on reboot).
 
@@ -40,7 +40,7 @@ The skill runs on multiple AI assistant platforms (Claude Code, OpenClaw). Each 
 
 All destructive or costly actions require explicit user confirmation:
 - **Publishing/scheduling** — posts are created as drafts; the agent must show a preview and get approval before publishing
-- **AI content generation** — Fireworks/Gemini/OpenAI calls cost money; the agent confirms before making generation requests
+- **AI image generation** — fal.ai calls cost money; the agent confirms before making generation requests
 - **Hashtag suggestions** — generated hashtags are shown to the user for approval before being included in posts
 
 ## Data flow
@@ -58,7 +58,7 @@ All destructive or costly actions require explicit user confirmation:
   JSON responses displayed to the user via their AI assistant
 ```
 
-No data is sent anywhere other than `api.getposta.app` (and optionally `api.fireworks.ai`, `generativelanguage.googleapis.com`, or `api.openai.com` for AI content generation when explicitly requested by the user).
+No data is sent anywhere other than `api.getposta.app` (and optionally `fal.run` / `fal.ai` for image generation when explicitly requested by the user).
 
 The script never phones home, collects telemetry, or contacts any endpoint not explicitly requested by the user.
 

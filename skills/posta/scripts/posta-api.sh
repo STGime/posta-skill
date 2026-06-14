@@ -43,7 +43,7 @@ _POSTA_CREDENTIAL_SOURCES=(
 )
 
 # Exact variable names the skill will search for — nothing else is read.
-# POSTA_API_TOKEN, POSTA_EMAIL, POSTA_PASSWORD, FIREWORKS_API_KEY
+# POSTA_API_TOKEN, POSTA_EMAIL, POSTA_PASSWORD, FAL_KEY
 
 posta_discover_credentials() {
   # Only run discovery once per session
@@ -51,6 +51,29 @@ posta_discover_credentials() {
     return 0
   fi
   export _POSTA_CREDS_DISCOVERED=1
+
+  # Helper: extract a single named variable from a file.
+  # Uses exact-match grep for the variable name — never reads arbitrary content.
+  _posta_extract_var() {
+    local varname="$1" file="$2"
+    grep -E "^(export )?${varname}=" "$file" 2>/dev/null | tail -1 | sed "s/^export //" | sed "s/^${varname}=//" | tr -d '"' | tr -d "'" || true
+  }
+
+  # Discover FAL_KEY for AI image generation (optional). Runs BEFORE the early
+  # returns below so it's found even when Posta auth (token or email/password)
+  # is already set — the common case. Only the dedicated config files are read.
+  if [[ -z "${FAL_KEY:-}" ]]; then
+    for src in "${_POSTA_CREDENTIAL_SOURCES[@]}"; do
+      if [[ -f "$src" ]]; then
+        local val
+        val=$(_posta_extract_var FAL_KEY "$src")
+        if [[ -n "$val" ]]; then
+          export FAL_KEY="$val"
+          break
+        fi
+      fi
+    done
+  fi
 
   # If API token already set, skip all file reads
   if [[ -n "${POSTA_API_TOKEN:-}" ]]; then
@@ -63,13 +86,6 @@ posta_discover_credentials() {
   fi
 
   local source_found=""
-
-  # Helper: extract a single named variable from a file.
-  # Uses exact-match grep for the variable name — never reads arbitrary content.
-  _posta_extract_var() {
-    local varname="$1" file="$2"
-    grep -E "^(export )?${varname}=" "$file" 2>/dev/null | tail -1 | sed "s/^export //" | sed "s/^${varname}=//" | tr -d '"' | tr -d "'" || true
-  }
 
   # 1. Look for POSTA_API_TOKEN (preferred auth method)
   for src in "${_POSTA_CREDENTIAL_SOURCES[@]}"; do
@@ -102,20 +118,6 @@ posta_discover_credentials() {
       fi
     fi
   done
-
-  # 3. Discover FIREWORKS_API_KEY for AI image generation (optional)
-  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
-    for src in "${_POSTA_CREDENTIAL_SOURCES[@]}"; do
-      if [[ -f "$src" ]]; then
-        local val
-        val=$(_posta_extract_var FIREWORKS_API_KEY "$src")
-        if [[ -n "$val" ]]; then
-          export FIREWORKS_API_KEY="$val"
-          break
-        fi
-      fi
-    done
-  fi
 
   if [[ -n "$source_found" ]]; then
     echo "INFO: Posta credentials loaded from ${source_found}" >&2
@@ -207,7 +209,7 @@ posta_api() {
     # JWT flow: re-login and retry once
     rm -f "$POSTA_TOKEN_FILE"
     token=$(posta_login)
-    args[6]="Authorization: Bearer ${token}"
+    args[4]="Authorization: Bearer ${token}"  # index 4 = the Authorization header value
 
     http_code=$(curl "${args[@]}" "${POSTA_BASE_URL}${endpoint}")
   fi
@@ -739,31 +741,27 @@ posta_create_post_from_file() {
   posta_api POST "/posts" "$payload"
 }
 
-# ─── Fireworks API Key Validation ────────────────────────────────────────────
+# ─── fal.ai API Key Validation ────────────────────────────────────────────────
 
-fireworks_validate_key() {
+fal_validate_key() {
   # Discover key if not set
   posta_discover_credentials
 
-  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
-    echo "ERROR: FIREWORKS_API_KEY is not set." >&2
+  if [[ -z "${FAL_KEY:-}" ]]; then
+    echo "ERROR: FAL_KEY is not set." >&2
     echo "Set it in ~/.posta/credentials, .env, or as an env var" >&2
+    echo "Get a key at https://fal.ai/dashboard/keys" >&2
     return 1
   fi
 
-  # Lightweight test: list models (small request)
-  local http_code
-  http_code=$(curl -sf -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer ${FIREWORKS_API_KEY}" \
-    "https://api.fireworks.ai/inference/v1/models" 2>/dev/null)
-
-  if [[ "$http_code" -ge 400 ]]; then
-    echo "ERROR: Fireworks API key is invalid (HTTP ${http_code}). Keys start with 'fw_'." >&2
-    echo "Get a key at https://fireworks.ai/account/api-keys" >&2
-    return 1
+  # fal keys look like "<key_id>:<key_secret>". A live check would incur image
+  # generation cost, so we validate presence/format here — the real test is the
+  # first generation call.
+  if [[ "$FAL_KEY" != *:* ]]; then
+    echo "WARN: FAL_KEY doesn't look like a fal.ai key (expected '<id>:<secret>')." >&2
   fi
 
-  echo "OK: Fireworks API key is valid" >&2
+  echo "OK: FAL_KEY is set" >&2
   return 0
 }
 
