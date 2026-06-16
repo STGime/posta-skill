@@ -424,11 +424,14 @@ posta_inject_platform_defaults() {
   # and injects defaults or warns when required fields are missing.
   local body="$1"
 
-  # Get the account IDs from the post body
+  # Get the account IDs from the post body.
+  # NOTE: use printf, not echo — under zsh (and bash with xpg_echo) `echo`
+  # expands the \n escapes inside JSON strings into raw newlines, which
+  # corrupts multiline captions into invalid JSON and triggers an API 500.
   local account_ids
-  account_ids=$(echo "$body" | jq -r '.socialAccountIds // [] | .[]' 2>/dev/null)
+  account_ids=$(printf '%s\n' "$body" | jq -r '.socialAccountIds // [] | .[]' 2>/dev/null)
   if [[ -z "$account_ids" ]]; then
-    echo "$body"
+    printf '%s\n' "$body"
     return 0
   fi
 
@@ -436,7 +439,7 @@ posta_inject_platform_defaults() {
   local accounts
   accounts=$(posta_list_accounts 2>/dev/null) || true
   if [[ -z "$accounts" ]]; then
-    echo "$body"
+    printf '%s\n' "$body"
     return 0
   fi
 
@@ -445,7 +448,7 @@ posta_inject_platform_defaults() {
   local has_pinterest=false
   for aid in $account_ids; do
     local platform
-    platform=$(echo "$accounts" | jq -r --arg id "$aid" '.[] | select(.id == ($id | tonumber)) | .platform' 2>/dev/null) || true
+    platform=$(printf '%s\n' "$accounts" | jq -r --arg id "$aid" '.[] | select(.id == ($id | tonumber)) | .platform' 2>/dev/null) || true
     case "$platform" in
       tiktok)    has_tiktok=true ;;
       pinterest) has_pinterest=true ;;
@@ -455,9 +458,9 @@ posta_inject_platform_defaults() {
   # TikTok: inject privacyLevel if missing
   if [[ "$has_tiktok" == "true" ]]; then
     local has_tiktok_privacy
-    has_tiktok_privacy=$(echo "$body" | jq -r '.platformConfigurations.tiktok.privacyLevel // empty' 2>/dev/null)
+    has_tiktok_privacy=$(printf '%s\n' "$body" | jq -r '.platformConfigurations.tiktok.privacyLevel // empty' 2>/dev/null)
     if [[ -z "$has_tiktok_privacy" ]]; then
-      body=$(echo "$body" | jq '.platformConfigurations = ((.platformConfigurations // {}) * {
+      body=$(printf '%s\n' "$body" | jq '.platformConfigurations = ((.platformConfigurations // {}) * {
         tiktok: ((.platformConfigurations.tiktok // {}) + {privacyLevel: "PUBLIC_TO_EVERYONE"})
       })')
       echo "INFO: Auto-injected TikTok privacyLevel=PUBLIC_TO_EVERYONE (required by TikTok API)" >&2
@@ -467,14 +470,14 @@ posta_inject_platform_defaults() {
   # Pinterest: warn if board_id is missing (cannot auto-select — user must choose)
   if [[ "$has_pinterest" == "true" ]]; then
     local has_board_id
-    has_board_id=$(echo "$body" | jq -r '.platformConfigurations.pinterest.boardId // .platformConfigurations.pinterest.board_id // empty' 2>/dev/null)
+    has_board_id=$(printf '%s\n' "$body" | jq -r '.platformConfigurations.pinterest.boardId // .platformConfigurations.pinterest.board_id // empty' 2>/dev/null)
     if [[ -z "$has_board_id" ]]; then
       echo "WARNING: Pinterest requires a board_id but none was provided. Publishing will fail with MISSING_BOARD_ID." >&2
       echo "Use posta_get_pinterest_boards \"\$ACCOUNT_ID\" to list available boards." >&2
     fi
   fi
 
-  echo "$body"
+  printf '%s\n' "$body"
 }
 
 posta_schedule_post() {
@@ -578,10 +581,10 @@ posta_generate_text_carousel_pdf() {
   local body
   body=$(jq -n --argjson s "$slides_json" '{slides: $s}')
   if [[ -n "$title" ]]; then
-    body=$(echo "$body" | jq --arg t "$title" '. + {title: $t}')
+    body=$(printf '%s\n' "$body" | jq --arg t "$title" '. + {title: $t}')
   fi
   if [[ -n "$logo_media_id" ]]; then
-    body=$(echo "$body" | jq --arg l "$logo_media_id" '. + {logo_media_id: $l}')
+    body=$(printf '%s\n' "$body" | jq --arg l "$logo_media_id" '. + {logo_media_id: $l}')
   fi
   posta_api POST "/media/generate-text-carousel-pdf" "$body"
 }
