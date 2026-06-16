@@ -139,7 +139,7 @@ posta_login() {
     -d "{\"email\": \"${POSTA_EMAIL}\", \"password\": \"${POSTA_PASSWORD}\"}")
 
   local token
-  token=$(echo "$response" | jq -r '.access_token // .accessToken // empty')
+  token=$(printf '%s\n' "$response" | jq -r '.access_token // .accessToken // empty')
 
   if [[ -z "$token" ]]; then
     echo "ERROR: Login failed — no token in response" >&2
@@ -292,8 +292,8 @@ posta_upload_media() {
     "{\"name\": \"${filename}\", \"mime_type\": \"${mime_type}\", \"size_bytes\": ${size_bytes}}")
 
   local media_id upload_url
-  media_id=$(echo "$create_response" | jq -r '.media_id')
-  upload_url=$(echo "$create_response" | jq -r '.upload_url')
+  media_id=$(printf '%s\n' "$create_response" | jq -r '.media_id')
+  upload_url=$(printf '%s\n' "$create_response" | jq -r '.upload_url')
 
   if [[ -z "$media_id" || "$media_id" == "null" ]]; then
     echo "ERROR: Failed to create upload URL" >&2
@@ -318,7 +318,7 @@ posta_upload_media() {
   local confirm_response
   confirm_response=$(posta_api POST "/media/${media_id}/confirm-upload")
 
-  echo "$confirm_response" | jq -r '.media.id // .media_id // empty'
+  printf '%s\n' "$confirm_response" | jq -r '.media.id // .media_id // empty'
   return 0
 }
 
