@@ -7,7 +7,7 @@ Create, schedule, and publish posts across Instagram, TikTok, Facebook, X/Twitte
 ## Features
 
 - **Post Management** — Create, schedule, publish, update, and cancel posts across 9 platforms
-- **Media Upload** — Upload images and videos with auto MIME detection, manage media library, generate carousel PDFs (from images, or with text composited over background images for LinkedIn document posts)
+- **Media Upload** — Upload images, videos, and audio with auto MIME detection, manage media library, generate carousel PDFs (from images, or with text composited over background images for LinkedIn document posts)
 - **AI Content Generation** — Generate images (Fireworks SDXL), captions and hashtags (Gemini/OpenAI)
 - **Analytics** — Performance overview, best posting times, trends, post comparison, hashtag analysis, benchmarks, CSV/PDF export
 - **Platform Discovery** — Query character limits, media requirements, and supported features per platform

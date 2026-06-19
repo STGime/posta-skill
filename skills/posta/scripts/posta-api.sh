@@ -244,7 +244,7 @@ posta_detect_mime() {
 
   # Validate detected type is in the allowed list, otherwise fall back to extension
   case "$detected" in
-    image/jpeg|image/png|image/webp|image/gif|video/mp4|video/quicktime|video/webm)
+    image/jpeg|image/png|image/webp|image/gif|video/mp4|video/quicktime|video/webm|audio/mpeg|audio/wav|audio/mp4|audio/webm)
       echo "$detected"
       return 0
       ;;
@@ -261,6 +261,9 @@ posta_detect_mime() {
     mp4)      echo "video/mp4" ;;
     mov)      echo "video/quicktime" ;;
     webm)     echo "video/webm" ;;
+    mp3)      echo "audio/mpeg" ;;
+    wav)      echo "audio/wav" ;;
+    m4a)      echo "audio/mp4" ;;
     *)
       echo "ERROR: Cannot detect MIME type for '${filepath}'. Specify it manually." >&2
       return 1
@@ -350,6 +353,10 @@ posta_upload_from_url() {
       video/mp4)       ext=".mp4" ;;
       video/quicktime) ext=".mov" ;;
       video/webm)      ext=".webm" ;;
+      audio/mpeg)      ext=".mp3" ;;
+      audio/wav)       ext=".wav" ;;
+      audio/mp4)       ext=".m4a" ;;
+      audio/webm)      ext=".webm" ;;
       *)               ext="" ;;
     esac
   else
@@ -357,7 +364,7 @@ posta_upload_from_url() {
     local url_ext="${url##*.}"
     url_ext=$(echo "$url_ext" | tr '[:upper:]' '[:lower:]' | sed 's/[?#].*//')
     case "$url_ext" in
-      jpg|jpeg|png|webp|gif|mp4|mov|webm)
+      jpg|jpeg|png|webp|gif|mp4|mov|webm|mp3|wav|m4a)
         ext=".${url_ext}"
         ;;
     esac
@@ -528,13 +535,15 @@ posta_get_media() {
 # ─── Media Library Management ────────────────────────────────────────────────
 
 posta_list_media() {
-  # Usage: posta_list_media [type] [status] [limit] [offset]
-  # type: image | video (optional)
+  # Usage: posta_list_media [type] [status] [limit] [offset] [sort]
+  # type: image | video | audio (optional)
   # status: pending | processing | completed | failed (optional)
+  # sort: newest | oldest (optional, default newest)
   local type="${1:-}"
   local status="${2:-}"
   local limit="${3:-20}"
   local offset="${4:-0}"
+  local sort="${5:-}"
   local query="limit=${limit}&offset=${offset}"
   if [[ -n "$type" ]]; then
     query="${query}&type=${type}"
@@ -542,7 +551,21 @@ posta_list_media() {
   if [[ -n "$status" ]]; then
     query="${query}&status=${status}"
   fi
+  if [[ -n "$sort" ]]; then
+    query="${query}&sort=${sort}"
+  fi
   posta_api GET "/media?${query}"
+}
+
+posta_get_media_by_ids() {
+  # Batch-fetch media by id (1-50 ids). Returns items in requested order
+  # plus a missing_ids array for ids not found / not owned by the user.
+  # Usage: posta_get_media_by_ids ids_json
+  #   ids_json: '["uuid-1", "uuid-2", ...]'
+  local ids_json="$1"
+  local ids_csv
+  ids_csv=$(echo "$ids_json" | jq -r 'join(",")')
+  posta_api GET "/media/by-ids?ids=${ids_csv}"
 }
 
 posta_delete_media() {

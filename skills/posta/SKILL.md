@@ -5,7 +5,7 @@ license: MIT
 homepage: https://github.com/STGime/posta-skill
 metadata:
   author: Posta
-  version: 1.2.2
+  version: 1.3.0
   tags:
     - social-media
     - scheduling
@@ -67,7 +67,7 @@ source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/ski
 
 This provides:
 - **Auth & Core:** `posta_login`, `posta_get_token`, `posta_api`, `posta_discover_credentials`
-- **Media:** `posta_detect_mime`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_media`, `posta_get_media`, `posta_delete_media`, `posta_generate_carousel_pdf`, `posta_generate_text_carousel_pdf`
+- **Media:** `posta_detect_mime`, `posta_upload_media`, `posta_upload_from_url`, `posta_list_media`, `posta_get_media`, `posta_get_media_by_ids`, `posta_delete_media`, `posta_generate_carousel_pdf`, `posta_generate_text_carousel_pdf`
 - **Posts:** `posta_list_posts`, `posta_create_post`, `posta_create_post_from_file`, `posta_get_post`, `posta_update_post`, `posta_delete_post`, `posta_schedule_post`, `posta_publish_post`, `posta_cancel_post`, `posta_get_calendar`
 - **Platform Discovery:** `posta_list_platforms`, `posta_get_platform_specs`, `posta_get_aspect_ratios`, `posta_get_platform`, `posta_get_pinterest_boards`
 - **Analytics:** `posta_get_analytics_overview`, `posta_get_analytics_capabilities`, `posta_get_analytics_posts`, `posta_get_post_analytics`, `posta_get_analytics_trends`, `posta_get_best_times`, `posta_get_content_types`, `posta_get_hashtag_analytics`, `posta_compare_posts`, `posta_get_benchmarks`, `posta_export_analytics_csv`, `posta_export_analytics_pdf`, `posta_refresh_post_analytics`, `posta_refresh_all_analytics`
@@ -140,6 +140,7 @@ MIME=$(posta_detect_mime "/path/to/file.mp4")
 **Supported formats:**
 - Images: `image/jpeg`, `image/png`, `image/webp`, `image/gif` (max 20MB)
 - Videos: `video/mp4`, `video/quicktime`, `video/webm` (max 500MB)
+- Audio: `audio/mpeg` (mp3), `audio/wav`, `audio/mp4` (m4a), `audio/webm` (max 50MB)
 
 After upload, the media enters `processing` status. For images this is fast (thumbnails/variants). For videos it takes longer. Check status with:
 ```bash
@@ -151,6 +152,14 @@ posta_get_media "$MEDIA_ID"
 ALL_MEDIA=$(posta_list_media)
 IMAGES_ONLY=$(posta_list_media "image")
 COMPLETED=$(posta_list_media "" "completed" 50)
+# Sort oldest-first (default is newest):
+OLDEST=$(posta_list_media "" "" 20 0 "oldest")
+```
+
+**Batch-fetch known media by id** (e.g. reconcile a post's `mediaIds` without paging the whole library):
+```bash
+# Returns { items: [...], missing_ids: [...] }; items follow request order.
+HYDRATED=$(posta_get_media_by_ids '["uuid-1","uuid-2","uuid-3"]')
 ```
 
 **Delete media:**
@@ -239,6 +248,8 @@ posta_publish_post "$POST_ID"
 ```
 
 Note: Either `caption` or at least one `mediaIds` entry is required. Text-only posts work for X/Twitter.
+
+**Caption limits are per-platform.** The tightest target wins — X/Twitter 280, Bluesky 300, Threads/Pinterest 500, Instagram/TikTok 2200, LinkedIn 3000, YouTube 5000, Facebook 63206. Validate against the strictest platform in `socialAccountIds` before posting; over-limit captions get a `400` naming the platform.
 
 ### 5. Generate AI Content
 
