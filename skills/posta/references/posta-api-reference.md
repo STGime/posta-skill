@@ -90,9 +90,9 @@ Refresh an expired access token.
 }
 ```
 
-Limits: Images max 20MB, Videos max 500MB.
+Limits: Images max 20MB, Videos max 500MB, Audio max 50MB.
 
-Allowed mime types: `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `video/mp4`, `video/quicktime`, `video/webm`
+Allowed mime types: `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `video/mp4`, `video/quicktime`, `video/webm`, `audio/mpeg` (mp3), `audio/wav`, `audio/mp4` (m4a), `audio/webm`
 
 **Response 201:**
 ```json
@@ -143,10 +143,26 @@ Upload binary file directly to the signed URL (not through Posta API).
 **Query params:**
 - `limit` (1-100, default 20)
 - `offset` (default 0)
-- `type`: `image` | `video`
+- `type`: `image` | `video` | `audio`
 - `status`: `pending` | `processing` | `completed` | `failed`
+- `sort`: `newest` | `oldest` (default `newest`)
 
 **Response 200:** `{ items: Media[], total, limit, offset }`
+
+### GET `/media/by-ids`
+**Auth required.** Batch fetch media by id. Useful when reconciling a known set of ids (e.g. the media attached to a post) without paging through the full library.
+
+**Query params:**
+- `ids`: comma-separated UUIDs (1-50, deduplicated server-side)
+
+**Response 200:**
+```json
+{
+  "items": [Media, ...],
+  "missing_ids": ["uuid", ...]
+}
+```
+`items` is returned in the order ids were requested (after dedup); `missing_ids` lists ids not found or not owned by the user.
 
 ### GET `/media/:id`
 **Auth required.** Get single media item with full details including variants.
@@ -182,7 +198,7 @@ composited over a background image — e.g. AI-generated backgrounds → a Linke
 **Body:**
 ```json
 {
-  "caption": "string (max 2200 chars, optional if mediaIds provided)",
+  "caption": "string (per-platform cap, optional if mediaIds provided)",
   "hashtags": ["string"],
   "mediaIds": ["uuid"],
   "socialAccountIds": ["string (required, min 1)"],
@@ -210,6 +226,22 @@ composited over a background image — e.g. AI-generated backgrounds → a Linke
 ```
 
 Note: Either `caption` or at least one `mediaIds` entry is required.
+
+**Caption limits are enforced per target platform** (tightest constraint across `socialAccountIds` wins). The outer Zod cap is 63206 (Facebook).
+
+| Platform  | Max caption |
+|-----------|-------------|
+| X/Twitter | 280         |
+| Bluesky   | 300         |
+| Threads   | 500         |
+| Pinterest | 500         |
+| Instagram | 2200        |
+| TikTok    | 2200        |
+| LinkedIn  | 3000        |
+| YouTube   | 5000        |
+| Facebook  | 63206       |
+
+A caption that exceeds the tightest platform's limit returns `400` with the platform and limit named.
 
 **Response 201:** Full post object
 
