@@ -44,7 +44,53 @@ posta_publish_post "$POST_ID"
 
 ---
 
-## 2. View Best Performing Posts
+## 2. Research X/Twitter Before a Posta Campaign
+
+**User:** "Find current X/Twitter objections about our product category, then create a Posta draft campaign"
+
+**Claude's steps:**
+1. Confirm TweetClaw is installed in OpenClaw and configured with a local `XQUIK_API_KEY`
+2. Use TweetClaw `explore` to find tweet search, reply search, user lookup, or monitor endpoints
+3. Run read-only TweetClaw searches for the product name, competitor terms, buyer pain points, and campaign hashtag
+4. Summarize source tweet URLs, tweet IDs, handles, objections, questions, and recurring phrases
+5. Draft Posta captions from the insights while keeping source notes out of public captions
+6. Create Posta drafts only after preview and user approval
+7. Suggest TweetClaw monitor queries for replies and mentions after the campaign is scheduled
+
+```bash
+# TweetClaw setup is handled by OpenClaw plugin config, not by Posta.
+openclaw plugins install @xquik/tweetclaw
+openclaw config set plugins.entries.tweetclaw.config.apiKey "$XQUIK_API_KEY"
+openclaw config set tools.alsoAllow '["explore", "tweetclaw"]'
+
+source "${POSTA_SKILL_ROOT:-${OPENCLAW_SKILL_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}}/skills/posta/scripts/posta-api.sh"
+
+# After TweetClaw returns reviewed source notes, create the Posta draft.
+ACCOUNTS=$(posta_list_accounts)
+X_ID=$(echo "$ACCOUNTS" | jq -r '.[] | select(.platform == "x") | .id | tostring')
+
+cat > /tmp/x-campaign-caption.txt << 'EOF'
+Most teams discover this problem too late:
+
+1. Manual reporting hides weak signals
+2. Launch feedback gets scattered across tools
+3. Reply patterns never make it into the next campaign
+
+Build the feedback loop before launch day.
+EOF
+
+POST=$(posta_create_post_from_file /tmp/x-campaign-caption.txt '[]' "[\"${X_ID}\"]" true '["launch", "feedback", "sociallistening"]')
+POST_ID=$(echo "$POST" | jq -r '.id')
+posta_get_post "$POST_ID" | jq '{id, caption, status}'
+```
+
+Keep TweetClaw search results in private campaign notes with tweet IDs and
+source URLs. Do not paste API keys, account cookies, or private credentials into
+the draft caption.
+
+---
+
+## 3. View Best Performing Posts
 
 **User:** "Show me my best performing posts this month"
 
@@ -74,7 +120,7 @@ echo "$TOP_POSTS" | jq '.items[] | {caption: .caption[:50], platform: .platform,
 
 ---
 
-## 3. Generate AI Image and Caption from Scratch
+## 4. Generate AI Image and Caption from Scratch
 
 **User:** "Generate a social media post about spring flowers"
 
@@ -112,7 +158,7 @@ echo "Image: ${IMAGE_URL}"
 
 ---
 
-## 4. Create Post with Multiline Caption
+## 5. Create Post with Multiline Caption
 
 **User:** "Create a LinkedIn post about EU data sovereignty with a detailed caption"
 
@@ -160,7 +206,7 @@ posta_schedule_post "$POST_ID" "2026-03-06T09:00:00Z"
 
 ---
 
-## 5. Check Platform Specs Before Posting
+## 6. Check Platform Specs Before Posting
 
 **User:** "What are the character limits and media requirements for each platform?"
 
@@ -184,7 +230,7 @@ posta_get_aspect_ratios
 
 ---
 
-## 6. Compare Post Performance and Export Analytics
+## 7. Compare Post Performance and Export Analytics
 
 **User:** "Compare my last 3 posts and export a report"
 
@@ -214,7 +260,7 @@ posta_get_benchmarks
 
 ---
 
-## 7. View Content Calendar and Manage Schedule
+## 8. View Content Calendar and Manage Schedule
 
 **User:** "Show me what's scheduled for next week"
 
@@ -236,7 +282,7 @@ posta_schedule_post "$POST_ID" "2026-03-18T10:00:00Z"
 
 ---
 
-## 8. Media Library Management
+## 9. Media Library Management
 
 **User:** "Show me my uploaded media and clean up old files"
 

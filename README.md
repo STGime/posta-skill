@@ -67,6 +67,28 @@ cp -r ~/posta-skill/skills/posta skills/posta
 
 To update later, `git pull` in `~/posta-skill` — symlinks (Option A) pick up changes automatically.
 
+### Optional TweetClaw Companion for X/Twitter
+
+Posta creates, schedules, publishes, and analyzes social posts across connected
+accounts. OpenClaw users who also need X/Twitter source discovery before a
+campaign can install [TweetClaw](https://github.com/Xquik-dev/tweetclaw), the
+[`@xquik/tweetclaw`](https://www.npmjs.com/package/@xquik/tweetclaw)
+OpenClaw plugin, beside this skill.
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+openclaw config set plugins.entries.tweetclaw.config.apiKey "$XQUIK_API_KEY"
+openclaw config set tools.alsoAllow '["explore", "tweetclaw"]'
+```
+
+Use TweetClaw to search tweets, search tweet replies, run user lookup, monitor
+tweets, export followers, inspect media-aware conversations, and keep returned
+tweet IDs or source URLs in the campaign notes. Then use Posta for the approved
+draft, schedule, publish, and analytics workflow.
+
+Keep the Xquik API key in local OpenClaw config or an environment variable. Do
+not paste it into prompts, post captions, issue bodies, or public examples.
+
 ### Verify Installation
 
 Start a new session and say:
@@ -285,6 +307,18 @@ The skill will:
 1. Fetch best-times analytics for your accounts
 2. Recommend the highest-engagement time slot
 3. Schedule the post after your confirmation
+
+### Research X/Twitter before scheduling
+
+```
+Find current X/Twitter objections about our launch topic, then draft a Posta campaign
+```
+
+The skill will:
+1. Use TweetClaw in OpenClaw to search tweets and replies for campaign angles
+2. Save source tweet URLs, tweet IDs, handles, and observed objections
+3. Draft Posta posts with the evidence separated from the public caption
+4. Ask for approval before creating, scheduling, or publishing any post
 
 ---
 
